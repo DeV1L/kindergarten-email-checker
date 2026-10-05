@@ -92,6 +92,23 @@ All settings come from `.env`. [.env.example](.env.example) lists every variable
 | `MAX_RETRIES_PER_MESSAGE` | Attempts before an email is moved to `Failed` |
 | `TZ` | Timezone used to resolve dates in emails, default `America/Argentina/Buenos_Aires` |
 
+## CI pipeline
+
+The workflow is in [.github/workflows/ci.yml](.github/workflows/ci.yml). It has two jobs.
+
+| Job | What it does | When it runs |
+|---|---|---|
+| `test` | Ruff lint, Ruff format check, pytest | Manual run from any branch. Pull request opened or updated |
+| `build-and-push` | Builds the Docker image and pushes it to `ghcr.io/dev1l/kindergarten-email-checker` | Manual run from any branch, after `test` passes. Merge to `main` |
+
+Image tags:
+
+- `latest`: the last build from `main`.
+- Branch name, for example `feature-imap-loop`: the last build from that branch.
+- `sha-<commit>`: one tag for each build.
+
+To start a manual run: Actions, CI, Run workflow, then select the branch.
+
 ## Local development
 
 Python 3.10 or newer. The container uses 3.13.

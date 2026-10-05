@@ -17,6 +17,7 @@ Spanish kindergarten emails, read from a dedicated Gmail account over IMAP, summ
 - `telegram.py`: Bot API client
 - `prompt.md`: system prompt
 - `tests/`: pytest
+- `.github/workflows/ci.yml`: tests on PRs, image build and push to GHCR on merges to `main`
 
 ## Commands
 
