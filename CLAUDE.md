@@ -25,7 +25,8 @@ Spanish kindergarten emails, read from a dedicated Gmail account over IMAP, summ
 pip install -e ".[dev]"
 ruff check . && ruff format --check .
 pytest
-docker compose up -d --build
+docker build -t kindergarten-email-checker .
+docker compose pull && docker compose up -d   # on the VPS
 ```
 
 ## Development rules
