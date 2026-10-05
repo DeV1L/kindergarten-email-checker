@@ -191,6 +191,7 @@ Everything comes from environment variables, loaded from `.env` by Docker Compos
 - Container: `restart: unless-stopped`, read-only root filesystem with a tmpfs at `/tmp`, 256 MB memory limit, json-file logs rotated at 3 × 10 MB.
 - VPS: inbound firewall closed except SSH with keys, unattended security updates. The tool needs nothing inbound.
 - Deploy and update: `git pull && docker compose up -d --build`.
+- CI: `.github/workflows/ci.yml` runs the tests on pull requests and on manual runs. It builds the image and pushes it to `ghcr.io/dev1l/kindergarten-email-checker` on merges to `main` and on manual runs. On a manual run, the image is built only after the tests pass. On a merge to `main`, the tests do not run again; they ran on the pull request.
 - Logs: `docker compose logs`. One log line per processed email with UID, sender, subject, urgency, deadline, Telegram message id and duration. Failures are also posted to the group, so a broken run is noticed where the summaries are read.
 
 ## 13. Costs
