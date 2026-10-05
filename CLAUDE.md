@@ -35,6 +35,12 @@ docker compose up -d --build
 - Documentation is plain, simple English, close to ASD-STE100: short sentences, active voice, one idea per sentence, common words.
 - Code is plain and simple. Do not over-engineer: no abstraction for one caller, no setting for a constant, no framework where a function will do.
 
+## Git workflow
+
+- Never commit to `main`.
+- Every change goes in a branch: `feature/<short-name>` for new behaviour, `fix/<short-name>` for bug fixes.
+- Changes reach `main` only through a pull request.
+
 ## Constraints
 
 - Only the dedicated mailbox is ever accessed. Never add code that touches the owner's personal mailbox.
