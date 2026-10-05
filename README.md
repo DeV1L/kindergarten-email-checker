@@ -99,7 +99,7 @@ The workflow is in [.github/workflows/ci.yml](.github/workflows/ci.yml). It has 
 | Job | What it does | When it runs |
 |---|---|---|
 | `test` | Ruff lint, Ruff format check, pytest | Manual run from any branch. Pull request opened or updated |
-| `image` | Builds the Docker image and pushes it to `ghcr.io/dev1l/kindergarten-email-checker` | Manual run from any branch, after `test` passes. Merge to `main` |
+| `build-and-push` | Builds the Docker image and pushes it to `ghcr.io/dev1l/kindergarten-email-checker` | Manual run from any branch, after `test` passes. Merge to `main` |
 
 Image tags:
 

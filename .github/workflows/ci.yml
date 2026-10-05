@@ -23,7 +23,7 @@ jobs:
       - run: ruff format --check .
       - run: pytest
 
-  image:
+  build-and-push:
     # Runs on manual runs and on merges to main.
     # Manual run: starts after the test job passes.
     # Merge to main: the test job does not run (it ran on the PR), so this job starts at once.
