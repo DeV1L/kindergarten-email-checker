@@ -51,17 +51,19 @@ Create a key at https://platform.deepseek.com and top-up a balance.
 
 ### 5. Configure and run on the VPS
 
+The VPS needs only `compose.yaml` and `.env`. It does not build the image; it pulls the public image from ghcr.io. No login is needed.
+
 ```bash
-git clone https://github.com/DeV1L/kindergarten-email-checker.git
-cd kindergarten-email-checker
-cp .env.example .env
+mkdir kindergarten-email-checker && cd kindergarten-email-checker
+curl -fsSLO https://raw.githubusercontent.com/DeV1L/kindergarten-email-checker/main/compose.yaml
+curl -fsSL https://raw.githubusercontent.com/DeV1L/kindergarten-email-checker/main/.env.example -o .env
 chmod 600 .env
 ```
 
 Edit `.env`: mailbox and app password, the sender allowlist, the DeepSeek key, the Telegram token and chat id. Then:
 
 ```bash
-docker compose up -d --build
+docker compose pull && docker compose up -d
 ```
 
 Follow the logs:
@@ -70,11 +72,13 @@ Follow the logs:
 docker compose logs -f
 ```
 
-Update later with:
+Update to the last build from `main`:
 
 ```bash
-git pull && docker compose up -d --build
+docker compose pull && docker compose up -d
 ```
+
+To run a branch build, set `IMAGE_TAG` in `.env` to the branch tag, for example `feature-imap-loop`, then run the same command.
 
 ## Configuration
 
@@ -90,6 +94,7 @@ All settings come from `.env`. [.env.example](.env.example) lists every variable
 | `SWEEP_MINUTES` | Fallback poll interval when IDLE delivers nothing |
 | `MAX_ATTACHMENT_MB` | Larger attachments are not sent to the model. The post still lists their names |
 | `MAX_RETRIES_PER_MESSAGE` | Attempts before an email is moved to `Failed` |
+| `IMAGE_TAG` | Image tag to run, default `latest` |
 | `TZ` | Timezone used to resolve dates in emails, default `America/Argentina/Buenos_Aires` |
 
 ## CI pipeline
@@ -120,7 +125,14 @@ ruff check .
 pytest
 ```
 
-Run the tool locally with a filled `.env` in the project directory:
+Build and run the image locally:
+
+```bash
+docker build -t kindergarten-email-checker .
+docker run --rm --env-file .env kindergarten-email-checker
+```
+
+Run the tool locally without Docker, with a filled `.env` in the project directory:
 
 ```bash
 python -m kindergarten_email_checker

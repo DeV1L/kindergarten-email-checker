@@ -1,6 +1,6 @@
 services:
   checker:
-    build: .
+    image: ghcr.io/dev1l/kindergarten-email-checker:${IMAGE_TAG:-latest}
     env_file: .env
     restart: unless-stopped
     read_only: true
