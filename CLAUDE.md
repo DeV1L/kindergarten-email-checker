@@ -5,7 +5,8 @@ Spanish kindergarten emails, read from a dedicated Gmail account over IMAP, summ
 ## Read first
 
 - `README.md`: setup and operations.
-- `docs/ARCHITECTURE.md`: design, module map, failure handling, decision log, open questions. Keep it in sync when behaviour changes.
+- `docs/ARCHITECTURE.md`: design, module map, failure handling, decision log. Keep it in sync when behaviour changes.
+- `docs/STATUS.md`: what is done, what is verified, what is still open.
 
 ## Layout
 
@@ -32,7 +33,7 @@ docker compose pull && docker compose up -d   # on the VPS
 ## Development rules
 
 - If any logic changes, update the documentation in the same commit: `README.md`, `docs/ARCHITECTURE.md`, `.env.example` as applicable. The docs describe how the tool works now.
-- Keep the project status in `docs/ARCHITECTURE.md`, not in the README.
+- Keep the project status and open questions in `docs/STATUS.md`. Not in the README, not in `docs/ARCHITECTURE.md`.
 - Commit messages are brief: one line.
 - Documentation is plain, simple English, close to ASD-STE100: short sentences, active voice, one idea per sentence, common words.
 - Code is plain and simple. Do not over-engineer: no abstraction for one caller, no setting for a constant, no framework where a function will do.
@@ -47,7 +48,7 @@ docker compose pull && docker compose up -d   # on the VPS
 
 - Only the dedicated mailbox is ever accessed. Never add code that touches the owner's personal mailbox.
 - Gmail labels are the only state. No database, no files that must survive a restart.
-- Model: DeepSeek via the Anthropic Messages API format (`anthropic` SDK, custom `base_url`), model `deepseek-flash`, thinking enabled. Do not disable thinking.
+- Model: DeepSeek via the Anthropic Messages API format (`anthropic` SDK, custom `base_url`), model `deepseek-flash`, thinking enabled. Do not disable thinking. Keep `tool_choice` on `auto`: DeepSeek rejects a forced tool choice when thinking is on.
 - Summaries are Russian; proper nouns stay as written.
 - Every Telegram post is sent the same way. Urgency is only a label. No silent posts, no pinning.
 - Attachments are named in the post, never uploaded to Telegram.

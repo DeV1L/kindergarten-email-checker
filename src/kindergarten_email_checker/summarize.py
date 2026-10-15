@@ -1,36 +1,45 @@
 """The model call (docs/ARCHITECTURE.md, section 8).
 
 One Anthropic Messages API request to DeepSeek with thinking enabled. The summary comes back
-as the input of a forced `report_summary` tool call and is validated against `Summary`.
+as the input of a `report_summary` tool call and is validated against `Summary`.
 """
 
 from __future__ import annotations
 
-from datetime import date
+import base64
+import json
+import logging
+from datetime import date, datetime
 from pathlib import Path
 from typing import Literal
+from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, Field
+import anthropic
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from kindergarten_email_checker.config import Settings
 from kindergarten_email_checker.content import EmailContent
 
+log = logging.getLogger(__name__)
+
 TOOL_NAME = "report_summary"
+MAX_TOKENS = 16_000  # thinking and the tool call together
 SYSTEM_PROMPT = (Path(__file__).parent / "prompt.md").read_text(encoding="utf-8")
 
-Urgency = Literal["low", "normal", "high"]
+Urgency = Literal["low", "medium", "high"]
 Category = Literal["info", "event", "action_required", "payment", "closure", "health", "other"]
+NO_VALUE = {"", "null", "none"}
 
 
 class Summary(BaseModel):
     """What the model reports for one email. Field descriptions are part of the tool schema."""
 
     title_ru: str = Field(description="Заголовок одной строкой, до 60 символов")
-    summary_ru: str = Field(description="Суть письма в 2–4 предложениях")
+    summary_ru: str = Field(description="Суть письма, до 3 коротких предложений, до 350 символов")
     urgency: Urgency = Field(
         description=(
-            "high: действовать в ближайшие 2 дня, отмена или закрытие, здоровье и безопасность; "
-            "normal: есть действие или событие позже; low: только информация"
+            "high: действовать в ближайшие 2 дня или меняется посещение в ближайшие 2 дня; "
+            "medium: действие или событие позже; low: ничего делать не нужно"
         )
     )
     category: Category
@@ -45,6 +54,14 @@ class Summary(BaseModel):
         default=None, description="Время события в формате HH:MM, если указано"
     )
 
+    @field_validator("action_ru", "deadline", "event_date", "event_time", mode="before")
+    @classmethod
+    def text_null_is_none(cls, value):
+        """The model sometimes writes the text "null" instead of JSON null. Treat it as no value."""
+        if isinstance(value, str) and value.strip().lower() in NO_VALUE:
+            return None
+        return value
+
 
 def tool_definition() -> dict:
     """Tool whose input schema is the Summary model, for the `tools` request parameter."""
@@ -55,6 +72,97 @@ def tool_definition() -> dict:
     }
 
 
-def summarize(content: EmailContent, settings: Settings) -> Summary:
-    """Call the model with thinking on and a forced tool call, validate, retry once. Pending."""
-    raise NotImplementedError
+def make_client(settings: Settings) -> anthropic.Anthropic:
+    return anthropic.Anthropic(
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key,
+        timeout=settings.llm_timeout_seconds,
+    )
+
+
+def summarize(
+    content: EmailContent, settings: Settings, client: anthropic.Anthropic | None = None
+) -> Summary | None:
+    """Ask the model for a Summary. One retry on invalid output. None after two invalid outputs.
+
+    API errors (timeout, 5xx, 429 after the SDK's own retries) are raised to the caller.
+    """
+    client = client or make_client(settings)
+    messages: list[dict] = [{"role": "user", "content": user_content(content, settings)}]
+    for attempt in (1, 2):
+        response = client.messages.create(
+            model=settings.llm_model,
+            max_tokens=MAX_TOKENS,
+            system=SYSTEM_PROMPT,
+            messages=messages,
+            tools=[tool_definition()],
+            # DeepSeek rejects a forced tool_choice with thinking on. prompt.md asks for the call.
+            tool_choice={"type": "auto"},
+            thinking={"type": "enabled", "budget_tokens": 8000},  # DeepSeek ignores the budget
+            output_config={"effort": settings.llm_effort},
+        )
+        tool_use = next(
+            (b for b in response.content if b.type == "tool_use" and b.name == TOOL_NAME), None
+        )
+        if tool_use is None:
+            problem = {"problem": f"no {TOOL_NAME} call", "stop_reason": response.stop_reason}
+            retry_turn = {"role": "user", "content": f"Call the {TOOL_NAME} tool."}
+        else:
+            try:
+                return Summary.model_validate(tool_use.input)
+            except ValidationError as error:
+                problem = {
+                    "problem": f"invalid {TOOL_NAME} input",
+                    "input": tool_use.input,
+                    "errors": json.loads(error.json(include_url=False)),
+                }
+                retry_turn = {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tool_use.id,
+                            "is_error": True,
+                            "content": f"{error}\nCall {TOOL_NAME} again with corrected input.",
+                        }
+                    ],
+                }
+        # One line with a JSON object, so the log stays one line per event.
+        log.warning(
+            "uid=%s attempt %d: %s", content.uid, attempt, json.dumps(problem, ensure_ascii=False)
+        )
+        messages += [{"role": "assistant", "content": response.content}, retry_turn]
+    return None
+
+
+def user_content(content: EmailContent, settings: Settings) -> list[dict]:
+    """Metadata, body and PDF texts as one text block, then the images."""
+    today = datetime.now(ZoneInfo(settings.tz))
+    parts = [
+        f"From: {content.sender}",
+        f"Subject: {content.subject}",
+        f"Sent: {content.sent_at:%Y-%m-%d %H:%M, %A} ({settings.tz})",
+        f"Today: {today:%Y-%m-%d, %A}",
+        "",
+        "Body:",
+        content.text or "(empty)",
+    ]
+    for name, text in content.pdf_texts:
+        parts += ["", f"PDF attachment {name}:", text]
+    if content.not_sent_to_model:
+        parts += ["", "Attachments not shown to you: " + ", ".join(content.not_sent_to_model)]
+    if content.images:
+        parts += ["", "Images from attachments and scanned PDF pages follow."]
+    blocks: list[dict] = [{"type": "text", "text": "\n".join(parts)}]
+    for media_type, data in content.images:
+        blocks.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": base64.b64encode(data).decode(),
+                },
+            }
+        )
+    return blocks

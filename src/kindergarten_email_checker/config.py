@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     max_attachment_mb: int = 10
     max_retries_per_message: int = 3
     log_level: str = "INFO"
+    tz: str = "America/Argentina/Buenos_Aires"
 
     @field_validator("imap_password")
     @classmethod
