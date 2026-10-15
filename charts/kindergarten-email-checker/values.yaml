@@ -1,0 +1,18 @@
+image:
+  repository: ghcr.io/dev1l/kindergarten-email-checker
+  tag: ""
+  pullPolicy: Always
+
+# Secret with all settings from .env. The chart does not create it. Create it from .env:
+existingSecret: kindergarten-email-checker
+
+# Extra environment variables. They override the values in the secret.
+env: {}
+#  LOG_LEVEL: DEBUG
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 128Mi

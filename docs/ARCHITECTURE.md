@@ -186,7 +186,7 @@ Rules:
 
 ## 11. Configuration
 
-Everything comes from environment variables, loaded from `.env` by Docker Compose. `.env.example` is the reference. Secrets exist only in `.env` with mode 600, never in the image, the repository or the logs.
+Everything comes from environment variables, loaded from `.env` by Docker Compose, or from a Secret made from `.env` on Kubernetes. `.env.example` is the reference. Secrets exist only in `.env` with mode 600, never in the image, the repository or the logs.
 
 ## 12. Deployment
 
@@ -195,6 +195,7 @@ Everything comes from environment variables, loaded from `.env` by Docker Compos
 - VPS: inbound firewall closed except SSH with keys, unattended security updates. The tool needs nothing inbound.
 - Files on the VPS: `compose.yaml` and `.env` only. `IMAGE_TAG` in `.env` selects the image tag, default `latest`.
 - Deploy and update: `docker compose pull && docker compose up -d`.
+- Kubernetes: the Helm chart in `charts/kindergarten-email-checker` is the other way to run the image, for example on a k3s cluster. It has one Deployment and nothing else: no Service, no ingress, no volume except an `emptyDir` at `/tmp`. Exactly one replica, with the `Recreate` strategy, so two pods never read the mailbox at the same time. The pod runs as user 10001 with a read-only root filesystem, no capabilities and no service account token. Memory limit 256 MiB. All settings come from a Secret that the operator creates from `.env` with `kubectl create secret generic --from-env-file`. The chart does not create or hold secrets. The image tag is `image.tag` in the chart values; `IMAGE_TAG` in `.env` is for Compose only.
 - CI: `.github/workflows/ci.yml` runs the tests on pull requests and on manual runs. It builds the image and pushes it to `ghcr.io/dev1l/kindergarten-email-checker` on merges to `main` and on manual runs. On a manual run, the image is built only after the tests pass. On a merge to `main`, the tests do not run again; they ran on the pull request.
 - Logs: `docker compose logs`. One log line per processed email with UID, sender, subject, urgency, deadline, Telegram message id and duration. An invalid model answer gives one warning line with a JSON object: the problem, the tool input and the validation errors. Failures are also posted to the group, so a broken run is noticed where the summaries are read.
 

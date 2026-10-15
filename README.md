@@ -80,6 +80,51 @@ docker compose pull && docker compose up -d
 
 To run a branch build, set `IMAGE_TAG` in `.env` to the branch tag, for example `feature-imap-loop`, then run the same command.
 
+### 6. Run on Kubernetes instead (optional)
+
+The Helm chart is in [charts/kindergarten-email-checker](charts/kindergarten-email-checker). It runs the same image with the same limits as `compose.yaml`. It also uses the same `.env`.
+
+Run only one instance per mailbox. If the VPS container and the cluster read the same mailbox, emails can be posted twice. Stop the VPS container first, or use a different mailbox and Telegram group for the test.
+
+Create a namespace and a secret from `.env`:
+
+```bash
+kubectl create namespace kindergarten
+kubectl -n kindergarten create secret generic kindergarten-email-checker --from-env-file=.env
+```
+
+`--from-env-file` does not remove quotes. Write the values in `.env` without quotes.
+
+Install the chart:
+
+```bash
+helm upgrade --install kindergarten-email-checker charts/kindergarten-email-checker -n kindergarten
+```
+
+Follow the logs:
+
+```bash
+kubectl -n kindergarten logs -f deployment/kindergarten-email-checker
+```
+
+To run a branch build, add `--set image.tag=feature-imap-loop` to the `helm upgrade` command. `IMAGE_TAG` in `.env` has no effect on Kubernetes.
+
+The pod reads the secret only when it starts. After you change `.env`, replace the secret and restart the pod:
+
+```bash
+kubectl -n kindergarten create secret generic kindergarten-email-checker --from-env-file=.env --dry-run=client -o yaml | kubectl apply -f -
+```
+
+```bash
+kubectl -n kindergarten rollout restart deployment/kindergarten-email-checker
+```
+
+To remove it:
+
+```bash
+helm uninstall kindergarten-email-checker -n kindergarten
+```
+
 ## Configuration
 
 All settings come from `.env`. [.env.example](.env.example) lists every variable with a comment.
