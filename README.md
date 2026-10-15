@@ -2,7 +2,7 @@
 
 Reads the emails a kindergarten sends in Spanish, writes a short summary in Russian with urgency, deadline and event date, and posts it to a private Telegram group. Runs as one Docker container on a VPS and touches only a dedicated mailbox that receives forwarded kindergarten mail.
 
-The design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The current state is in [docs/STATUS.md](docs/STATUS.md).
 
 ## How it works
 

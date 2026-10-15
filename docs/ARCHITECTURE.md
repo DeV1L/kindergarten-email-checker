@@ -1,10 +1,6 @@
 # Architecture
 
-This is the reference for building the tool and for changing it later. The reasons behind each decision are in section 14.
-
-## Status
-
-Project scaffold, 2026-10-05. Done: configuration, packaging, Docker files, the output schema and the system prompt. Not done: the IMAP loop, content extraction, the model call and the Telegram client. These modules are stubs.
+This is the reference for building the tool and for changing it later. The reasons behind each decision are in section 14. The current state of the work is in [STATUS.md](STATUS.md).
 
 ## 1. Purpose and constraints
 
@@ -60,7 +56,7 @@ Module map:
 1. On start: connect to IMAP, create the state labels if missing, process everything unseen.
 2. Forever: issue IMAP IDLE and wait up to `SWEEP_MINUTES`. Return on new mail or on timeout. Process everything unseen. Repeat.
 3. The sweep after a timeout catches anything IDLE missed and refreshes the session, which Gmail drops after roughly 30 minutes anyway.
-4. On any IMAP error: log, wait 30 seconds, reconnect. The loop never exits on its own. Docker restarts the process if it crashes.
+4. On any IMAP error: close the connection, wait 30 seconds, reconnect. A dropped connection (IMAP abort, socket, SSL or timeout error) is normal: Gmail closes sessions, networks change, laptops sleep. It gets one warning line without a traceback. Any other IMAP error gets a full traceback. The logout after a dropped connection fails too; that error is ignored. The loop never exits on its own. Docker restarts the process if it crashes.
 5. Socket timeouts on IMAP and HTTP calls, so a stalled connection cannot block the loop.
 
 Plain polling is the same loop without the IDLE call. It is the fallback if IDLE misbehaves with Gmail.
@@ -73,11 +69,11 @@ flowchart TD
     B --> C{Sender on the allowlist?}
     C -->|no| I[Move to Ignored]
     C -->|yes| E["Extract content<br/>HTML to text, PDF text, page images, photos"]
-    E --> S["DeepSeek call<br/>thinking on, forced tool call"]
+    E --> S["DeepSeek call<br/>thinking on, tool call"]
     S --> V{Valid against the schema?}
     V -->|no, first time| S
     V -->|no, second time| F[Send original text to Telegram]
-    V -->|yes| T[Post summary and attachments to Telegram]
+    V -->|yes| T[Post summary to Telegram]
     T --> M[Move to Processed]
     F --> M
 ```
@@ -100,6 +96,8 @@ stateDiagram-v2
 ```
 
 - Unseen mail in `INBOX` is the queue. Fetching uses `mark_seen=False`; moving the message is the only state change the tool makes.
+- Moves use the IMAP MOVE command. After login the tool reads the server's capability list again, because Gmail lists MOVE only after login. Without MOVE, the move falls back to copy and delete, and with some Gmail settings the email goes to Trash.
+- The tool creates the `Processed`, `Ignored` and `Failed` labels at start if they do not exist.
 - Telegram is called before the move. A crash between the two produces one duplicate message, never a lost one.
 - A per-UID attempt counter lives in memory. After `MAX_RETRIES_PER_MESSAGE` failures the message is moved to `Failed` and the error is posted once. The counter resets on restart, which only grants a few extra attempts.
 - No database. Everything the tool knows is visible in the Gmail web UI, which doubles as the admin interface.
@@ -109,8 +107,9 @@ stateDiagram-v2
 | Input | Handling | Reaches the model as |
 |---|---|---|
 | HTML body | Prefer the text/plain part when present, otherwise html2text | text |
-| PDF with a text layer | pypdf `extract_text`. A text layer counts as present when the average page has more than ~200 characters | text |
-| PDF without a text layer | pypdfium2 renders each page to PNG at about 110 dpi, at most 10 pages | images |
+| PDF with a text layer | pypdfium2 text extraction. A text layer counts as present when the average page has more than 200 characters | text |
+| PDF without a text layer | pypdfium2 renders each page at about 110 dpi, Pillow saves it as PNG, at most 10 pages | images |
+| PDF that cannot be read | Not sent to the model. The file name is listed in the prompt | nothing |
 | JPEG, PNG, GIF, WebP | As is. Images under 20 KB are skipped as logos and signature graphics | images |
 | Other files | Not sent to the model. The file names are listed in the prompt | nothing |
 
@@ -122,19 +121,20 @@ Attachment files are not sent to Telegram. The post lists the attachment names, 
 
 - Endpoint: the Anthropic Messages API format served by DeepSeek at `https://api.deepseek.com/anthropic`, called with the `anthropic` SDK and a custom `base_url`. Switching to a Claude model later is a base URL and model change.
 - Model: `deepseek-flash` (DeepSeek-V4.1-Flash). Cheapest, accepts images, recommended by DeepSeek. `deepseek-v4-pro` is text-only.
-- Thinking: enabled. The request carries `thinking={"type": "enabled", "budget_tokens": 8000}`; DeepSeek ignores `budget_tokens` and reads the effort from `output_config={"effort": LLM_EFFORT}`. The response's thinking blocks are ignored. Every call is single-turn, so nothing is passed back.
-- Output shaping: one tool, `report_summary`, whose `input_schema` is `Summary.model_json_schema()`, requested with `tool_choice={"type": "tool", "name": "report_summary"}`. DeepSeek's Anthropic format has no structured-output mode and no JSON mode, so the tool call is how the schema is enforced.
-- Validation: `Summary.model_validate(tool_use.input)`. On a validation error or a missing tool call: one retry with the error text appended as a user message. After two failures: subject, sender and original text go to Telegram without a summary, and the email is still moved to `Processed`.
+- Thinking: enabled. The request carries `thinking={"type": "enabled", "budget_tokens": 8000}`; DeepSeek ignores `budget_tokens` and reads the effort from `output_config={"effort": LLM_EFFORT}`. The tool reads only the tool call from the response. On a retry, the full previous response, thinking blocks included, goes back to the model.
+- Output shaping: one tool, `report_summary`, whose `input_schema` is `Summary.model_json_schema()`. The request uses `tool_choice={"type": "auto"}`, and the system prompt tells the model to call the tool exactly once. DeepSeek rejects a forced tool choice when thinking is on (tested 2026-10-05: "Thinking mode does not support this tool_choice"). DeepSeek's Anthropic format has no structured-output mode and no JSON mode, so the tool call carries the schema.
+- Validation: `Summary.model_validate(tool_use.input)`. For `action_ru`, `deadline`, `event_date` and `event_time`, the text values "null", "none" and an empty string count as no value. The model sometimes writes the text "null" instead of JSON null. When the model writes tool arguments that are not valid JSON, DeepSeek does not report an error: it returns the tool call with empty input `{}`, which fails validation. On a validation error: one retry with a `tool_result` block that carries the error. On a missing tool call: one retry with the message "Call the report_summary tool." After two failures: subject, sender and original text go to Telegram without a summary, and the email is still moved to `Processed`.
+- API errors: the SDK retries timeouts, 429 and 5xx twice. After that the error goes to the main loop, which counts an attempt (section 10).
 - Inputs: the system prompt from `prompt.md`; a user message with a metadata block (From, Subject, sent date in America/Argentina/Buenos_Aires, today's date), the body text, the PDF texts, the list of files not sent to the model, and the image blocks.
-- `max_tokens`: 4096 is enough for the tool call. Reasoning tokens are billed as output but do not count against it on DeepSeek; confirm at the first run.
+- `max_tokens`: 16,000, for thinking and the tool call together. The test call used about 830 output tokens.
 
 Output schema:
 
 | Field | Type | Meaning |
 |---|---|---|
 | `title_ru` | string | One line, up to 60 characters |
-| `summary_ru` | string | Two to four sentences |
-| `urgency` | `low`, `normal`, `high` | `high`: act within two days, cancellations, health or safety |
+| `summary_ru` | string | At most three short sentences, under 350 characters. No addresses or phone numbers unless needed for the action |
+| `urgency` | `low`, `medium`, `high` | How soon the parent must act. `high`: within two days from today, or attendance or schedule changes within two days. `medium`: later. `low`: nothing required, including conditional instructions. The topic does not set urgency |
 | `category` | `info`, `event`, `action_required`, `payment`, `closure`, `health`, `other` | Shown in the message; nothing depends on it yet |
 | `action_ru` | string or null | What the parent must do |
 | `deadline` | date or null | When the parent must have acted |
@@ -147,32 +147,35 @@ Relative dates in the email are resolved by the model from the sent date, which 
 Message layout, HTML parse mode:
 
 ```text
-🔴 Высокая срочность · ⏰ Срок: пт, 10 окт · 📅 Событие: 20 окт 10:00
-<b>Экскурсия в парк: нужно разрешение</b>
+🟡 Medium · 🎉 Мероприятие · ⏰ Срок: пт, 9 окт · 📅 Событие: вт, 20 окт 09:30
+<b>Экскурсия в Ботанический сад</b>
 
 summary_ru
 
 <b>Что сделать:</b> action_ru
 📎 Вложения: menu.pdf, autorizacion.pdf
 
-<blockquote expandable>original Spanish text, trimmed to fit</blockquote>
-<i>Тема: subject · От: sender</i>
+<i>Тема: subject · От: sender · Отправлено: пт, 2 окт 2026 14:52</i>
 ```
 
 Rules:
 
-- Urgency marks: 🔴 high, 🟡 normal, 🟢 low. Absent fields are omitted from the header line.
+- Header line: urgency, category, deadline, event date and time. Absent fields are left out.
+- Urgency labels: `🔴 High`, `🟡 Medium`, `🟢 Low`.
+- Category labels: `ℹ️ Информация`, `🎉 Мероприятие`, `✍️ Нужно действие`, `💰 Оплата`, `🔄 Изменение расписания`, `🩺 Здоровье`, `📌 Другое`.
 - All posts are sent the same way, with a normal notification. Urgency is only a label in the header line. Nothing is pinned.
-- Telegram's limit is 4096 characters. The original text is trimmed first, then the summary.
-- Attachments: one line with the file names. The files themselves are not sent. The original email is in the dedicated mailbox.
-- Fallback message when the model output is unusable: subject, sender and the original text in an expandable quote.
+- The post does not quote the original email. The original stays in the dedicated mailbox.
+- Attachments: one line with the file names. The files themselves are not sent.
+- Footer: subject, sender and the date the email was sent, with the year and time, in the `TZ` timezone. For a manual forward, this is the date of the forward.
+- Fallback message when the model output is unusable: `⚠️ Без сводки`, the attachment names and the original text in an expandable quote. This is the only post that quotes the email, because it has no summary. Telegram's limit is 4096 characters, so the original is trimmed to fit and ends with `…`.
+- Log hygiene: Telegram URLs contain the bot token. The tool sets the `httpx` and `httpx2` loggers to WARNING and builds Telegram error messages without the URL. The Anthropic SDK uses `httpx2`.
 - Error post: `⚠️ Не удалось обработать письмо «subject»: error`, at most once per message.
 
 ## 10. Failure handling
 
 | Failure | Behaviour |
 |---|---|
-| IMAP connection lost or IDLE error | Reconnect after 30 seconds, resume |
+| IMAP connection lost or IDLE error | One warning line, reconnect after 30 seconds, resume |
 | Sender not on the allowlist | Moved to `Ignored`, no post |
 | Attachment too large or of an unsupported type | Not sent to the model, named in the prompt and in the post |
 | Model timeout, 5xx, 429 | Attempt counter +1, email stays unseen, retried next cycle |
@@ -193,7 +196,7 @@ Everything comes from environment variables, loaded from `.env` by Docker Compos
 - Files on the VPS: `compose.yaml` and `.env` only. `IMAGE_TAG` in `.env` selects the image tag, default `latest`.
 - Deploy and update: `docker compose pull && docker compose up -d`.
 - CI: `.github/workflows/ci.yml` runs the tests on pull requests and on manual runs. It builds the image and pushes it to `ghcr.io/dev1l/kindergarten-email-checker` on merges to `main` and on manual runs. On a manual run, the image is built only after the tests pass. On a merge to `main`, the tests do not run again; they ran on the pull request.
-- Logs: `docker compose logs`. One log line per processed email with UID, sender, subject, urgency, deadline, Telegram message id and duration. Failures are also posted to the group, so a broken run is noticed where the summaries are read.
+- Logs: `docker compose logs`. One log line per processed email with UID, sender, subject, urgency, deadline, Telegram message id and duration. An invalid model answer gives one warning line with a JSON object: the problem, the tool input and the validation errors. Failures are also posted to the group, so a broken run is noticed where the summaries are read.
 
 ## 13. Costs
 
@@ -214,17 +217,6 @@ Everything comes from environment variables, loaded from `.env` by Docker Compos
 | State | Gmail labels | Nothing to back up or migrate; visible in the Gmail UI | SQLite, a database |
 | Model | `deepseek-flash`, thinking on | Cheapest, accepts images, quality is enough; thinking is a requirement | Claude models, `deepseek-v4-pro` |
 | API format | Anthropic Messages format at DeepSeek | Thinking, tools and images supported; portable to Claude | OpenAI format, which has a JSON mode but no portability |
-| Output shaping | Forced tool call validated with Pydantic | Schema-shaped output that works with thinking on | JSON mode (OpenAI format only); strict tool mode (requires thinking off) |
-| PDFs | Local extraction, rendered pages for scans | DeepSeek accepts images but no documents | OCR engines in the image |
+| Output shaping | Tool call with `tool_choice` auto, validated with Pydantic | Schema-shaped output that works with thinking on | Forced tool choice (rejected with thinking on); JSON mode (OpenAI format only); strict tool mode (requires thinking off) |
+| PDFs | pypdfium2 for text and for rendering scans | DeepSeek accepts images but no documents; one library does both jobs | pypdf plus a renderer; OCR engines in the image |
 | Dedicated mailbox provider | Gmail | App passwords still work for IMAP | Outlook.com, which requires OAuth for IMAP |
-
-## 15. To verify at the first run
-
-- Forced tool choice with thinking enabled through the Anthropic-format endpoint. DeepSeek's OpenAI-format reference rejects named tool choice in thinking mode; the Anthropic-format table lists it as supported without a caveat. Fallback: `tool_choice` `auto` plus the "call the tool" instruction already in the prompt, same validation.
-- Authentication header: the SDK's `api_key` parameter sends `x-api-key`; DeepSeek's Claude Code guide uses a bearer token. If `x-api-key` is rejected, switch to the SDK's `auth_token` parameter.
-- Whether the kindergarten's emails carry content, or only "you have a new message" notifications from a platform. The prompt handles the latter, but then the tool has nothing to summarize.
-- Gmail IDLE behaviour over long sessions: reconnect frequency and whether the 10-minute sweep is enough.
-
-## 16. Out of scope
-
-Decided against, not merely postponed: pinning high-urgency messages, an external watchdog such as healthchecks.io, a database, a weekly digest or deadline reminders, redacting names before the model call, more than one recipient group.

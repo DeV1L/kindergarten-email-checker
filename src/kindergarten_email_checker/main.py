@@ -1,29 +1,43 @@
-"""Process entry point and the main loop.
+"""Process entry point and the main loop (docs/ARCHITECTURE.md, sections 4 and 5).
 
-Loop (docs/ARCHITECTURE.md, section 4):
-connect, ensure the state labels exist, sweep once, then forever:
-IDLE wait up to SWEEP_MINUTES, process every unseen message, repeat.
+Connect, process every unseen email, wait with IDLE up to SWEEP_MINUTES, repeat.
+On an IMAP error: close the connection, wait 30 seconds and connect again.
 """
 
 from __future__ import annotations
 
+import imaplib
 import logging
 import sys
+import time
 
-from kindergarten_email_checker import __version__
+from imap_tools import MailBox, MailMessage
+
+from kindergarten_email_checker import __version__, mail, telegram
 from kindergarten_email_checker.config import Settings
+from kindergarten_email_checker.content import extract
+from kindergarten_email_checker.summarize import summarize
 
 log = logging.getLogger("kindergarten_email_checker")
 
+RECONNECT_DELAY_SECONDS = 30
+# A dropped connection: Gmail closed the session, the network changed, the machine slept.
+# These are normal and get one warning line. Any other error gets a full traceback.
+CONNECTION_ERRORS = (imaplib.IMAP4.abort, OSError)
+
 
 def run() -> int:
-    """Console entry point. Returns the process exit code."""
+    """Console entry point."""
     settings = Settings()  # fails with a readable message when a required variable is missing
     logging.basicConfig(
         level=settings.log_level.upper(),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stdout,
     )
+    # httpx (Telegram) and httpx2 (Anthropic SDK) log every request URL at INFO.
+    # Telegram URLs contain the bot token, and the tool logs one line per email.
+    for name in ("httpx", "httpx2"):
+        logging.getLogger(name).setLevel(logging.WARNING)
     log.info(
         "kindergarten-email-checker %s starting: mailbox=%s model=%s sweep=%s min",
         __version__,
@@ -31,9 +45,87 @@ def run() -> int:
         settings.llm_model,
         settings.sweep_minutes,
     )
-    return loop(settings)
+    loop(settings)
+    return 0
 
 
-def loop(settings: Settings) -> int:
-    """Wake, fetch unseen, process each message, move it. Implementation pending."""
-    raise NotImplementedError("Processing loop not implemented yet. See docs/ARCHITECTURE.md.")
+def loop(settings: Settings) -> None:
+    """Run forever. An IMAP error ends a session; the next session starts after a delay."""
+    attempts: dict[str, int] = {}  # uid -> failed attempts, reset on restart
+    while True:
+        session(settings, attempts)
+        time.sleep(RECONNECT_DELAY_SECONDS)
+
+
+def session(settings: Settings, attempts: dict[str, int]) -> None:
+    """Connect and process mail until an IMAP error. Always closes the connection."""
+    mailbox = None
+    try:
+        mailbox = mail.connect(settings)
+        log.info("connected to %s", settings.imap_host)
+        while True:
+            for message in mail.fetch_unseen(mailbox):
+                process(mailbox, message, settings, attempts)
+            mail.wait_for_mail(mailbox, settings.sweep_minutes * 60)
+    except CONNECTION_ERRORS as error:
+        log.warning(
+            "IMAP connection failed or lost (%s: %s), reconnecting in %d s",
+            type(error).__name__,
+            error,
+            RECONNECT_DELAY_SECONDS,
+        )
+    except Exception:
+        log.exception("IMAP error, reconnecting in %d s", RECONNECT_DELAY_SECONDS)
+    finally:
+        if mailbox is not None:
+            mail.close(mailbox)
+
+
+def process(
+    mailbox: MailBox, message: MailMessage, settings: Settings, attempts: dict[str, int]
+) -> None:
+    """Handle one email and move it to its outcome label.
+
+    Errors in extraction, the model call or Telegram leave the email unseen, so the next cycle
+    tries again. IMAP errors are not caught here; they go up to the loop, which reconnects.
+    """
+    uid, sender, subject = message.uid, message.from_, message.subject
+    if not settings.sender_allowed(sender):
+        mail.move(mailbox, [uid], settings.imap_folder_ignored)
+        log.info("uid=%s ignored: sender %s is not on the allowlist", uid, sender)
+        return
+
+    started = time.monotonic()
+    try:
+        content = extract(message, settings)
+        summary = summarize(content, settings)
+        if summary:
+            message_id = telegram.send_summary(summary, content, settings)
+        else:
+            message_id = telegram.send_original(content, settings)
+    except Exception as error:
+        attempts[uid] = attempts.get(uid, 0) + 1
+        log.exception("uid=%s attempt %d failed", uid, attempts[uid])
+        if attempts[uid] < settings.max_retries_per_message:
+            return
+        try:
+            telegram.send_error(subject, f"{type(error).__name__}: {error}", settings)
+        except Exception:
+            log.exception("uid=%s could not post the error to Telegram", uid)
+        mail.move(mailbox, [uid], settings.imap_folder_failed)
+        attempts.pop(uid, None)
+        log.info("uid=%s moved to %s", uid, settings.imap_folder_failed)
+        return
+
+    mail.move(mailbox, [uid], settings.imap_folder_processed)
+    attempts.pop(uid, None)
+    log.info(
+        "uid=%s processed: from=%s subject=%r urgency=%s deadline=%s telegram_id=%s in %.1f s",
+        uid,
+        sender,
+        subject,
+        summary.urgency if summary else "no summary",
+        summary.deadline if summary else None,
+        message_id,
+        time.monotonic() - started,
+    )
