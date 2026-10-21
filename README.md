@@ -1,184 +1,50 @@
 # kindergarten-email-checker
 
-Reads the emails a kindergarten sends in Spanish, writes a short summary in Russian with urgency, deadline and event date, and posts it to a private Telegram group. Runs as one Docker container on a VPS and touches only a dedicated mailbox that receives forwarded kindergarten mail.
-
-The design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The current state is in [docs/STATUS.md](docs/STATUS.md).
+The app reads the emails that a kindergarten sends in Spanish. Writes a short summary in Russian with urgency, deadline and event date. Posts the summary to a private Telegram group. The app runs as one Docker container on a VPS or on Kubernetes. It reads only a dedicated mailbox that gets the forwarded kindergarten emails.
 
 ## How it works
 
-1. A filter in a personal mailbox forwards mail from the kindergarten's addresses to a dedicated Gmail account.
-2. The container stays connected to the dedicated mailbox and gets each new email when it arrives. It also checks the mailbox every 10 minutes, in case it missed an email.
-3. Each unseen email is checked against the sender allowlist, converted to text and sent to DeepSeek (`deepseek-flash`, thinking on) through its Anthropic-compatible API. PDFs and images go along as text or page images.
+1. A forwarding filter in the personal mailbox forwards the emails from the kindergarten addresses to the dedicated mailbox.
+2. The container stays connected to the dedicated mailbox and gets each new email when it arrives. It also checks the mailbox every 10 minutes (configurable), in case it missed an email.
+3. The app checks each unseen email against the sender allowlist and converts it to text. It sends the text to DeepSeek (`deepseek-flash`, thinking on) through the Anthropic-compatible API. PDFs and images go along as text or page images.
 4. The model returns a structured summary: Russian title and summary, urgency, category, action, deadline, event date.
-5. The summary is posted to the Telegram group. If the email has attachments, the post lists their names. Then the email is moved to the `Processed` label.
-
-All posts are sent the same way. Urgency is only a label in the post.
+5. The app posts the summary to the group in Telegram. When the email has attachments, the post lists their names. Then the app moves the email to the `Processed` label.
 
 Gmail labels are the only state: `INBOX` is the queue; `Processed`, `Ignored` and `Failed` record the outcome. There is no database.
 
-## Setup
+## Repository structure
 
-Requirements: a VPS with Docker and Docker Compose, a Google account used only for this tool, a Telegram account and a DeepSeek API key.
+| Path | Content |
+|------|---------|
+| `src/kindergarten_email_checker/` | The Python package and the system prompt |
+| `tests/` | Unit tests (pytest) |
+| `charts/kindergarten-email-checker/` | The Helm chart for Kubernetes |
+| `compose.yaml` | The Docker Compose file for the VPS |
+| `Dockerfile` | The container image |
+| `.env.example` | The template for `.env`, with every setting |
+| `docs/` | Documentation |
+| `.github/workflows/` | The CI workflow |
+| `AGENTS.md` | Rules for AI agents |
 
-### 1. Dedicated Gmail account
+## Requirements
 
-1. Create a new Google account, for example `name.kinder@gmail.com`, and use it for nothing else.
-2. Turn on 2-Step Verification: Google Account, Security, 2-Step Verification. Google allows app passwords only when 2-Step Verification is on.
-3. Create an app password: Google Account, Security, 2-Step Verification, App passwords. Name it `kindergarten-email-checker` and copy the 16-character password. IMAP is enabled by default on Gmail.
+- A Gmail account that only this app uses
+- A Telegram account
+- A DeepSeek API key
 
-### 2. Forwarding filter in the personal mailbox
+## Quick start
 
-Gmail:
+The full procedure, with every command, is in [docs/SETUP.md](docs/SETUP.md). The steps in short:
 
-1. Settings, See all settings, Forwarding and POP/IMAP, Add a forwarding address. Enter the dedicated address. Google sends a confirmation code to the dedicated mailbox; enter it.
-2. Settings, Filters and Blocked Addresses, Create a new filter. In From, list the kindergarten addresses separated by OR, for example `direccion@kinder.example OR secretaria@kinder.example`. Choose "Forward it to" and pick the dedicated address. Also tick "Never send it to Spam".
+1. Create the dedicated mailbox and an app password.
+2. Create the forwarding filter in the personal mailbox.
+3. Create the Telegram bot and the group.
+4. Create the DeepSeek API key.
+5. Fill in `.env`.
+6. Start the app.
 
-### 3. Telegram bot and group
+## Documentation
 
-1. Open a chat with `@BotFather`, send `/newbot`, follow the prompts and copy the token.
-2. Create a private group, add the bot to it and post any message in the group.
-3. Get the chat id:
-
-```bash
-curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates"
-```
-
-Find `"chat":{"id":-100...` in the output. Group ids are negative.
-
-### 4. DeepSeek API key
-
-Create a key at https://platform.deepseek.com and top-up a balance.
-
-### 5. Configure and run on the VPS
-
-The VPS needs only `compose.yaml` and `.env`. It does not build the image; it pulls the public image from ghcr.io. No login is needed.
-
-```bash
-mkdir kindergarten-email-checker && cd kindergarten-email-checker
-curl -fsSLO https://raw.githubusercontent.com/DeV1L/kindergarten-email-checker/main/compose.yaml
-curl -fsSL https://raw.githubusercontent.com/DeV1L/kindergarten-email-checker/main/.env.example -o .env
-chmod 600 .env
-```
-
-Edit `.env`: mailbox and app password, the sender allowlist, the DeepSeek key, the Telegram token and chat id. Then:
-
-```bash
-docker compose pull && docker compose up -d
-```
-
-Follow the logs:
-
-```bash
-docker compose logs -f
-```
-
-Update to the last build from `main`:
-
-```bash
-docker compose pull && docker compose up -d
-```
-
-To run a branch build, set `IMAGE_TAG` in `.env` to the branch tag, for example `feature-imap-loop`, then run the same command.
-
-### 6. Run on Kubernetes instead (optional)
-
-The Helm chart is in [charts/kindergarten-email-checker](charts/kindergarten-email-checker). It runs the same image with the same limits as `compose.yaml`. It also uses the same `.env`.
-
-Run only one instance per mailbox. If the VPS container and the cluster read the same mailbox, emails can be posted twice. Stop the VPS container first, or use a different mailbox and Telegram group for the test.
-
-Create a namespace and a secret from `.env`:
-
-```bash
-kubectl create namespace kindergarten
-kubectl -n kindergarten create secret generic kindergarten-email-checker --from-env-file=.env
-```
-
-`--from-env-file` does not remove quotes. Write the values in `.env` without quotes.
-
-Install the chart:
-
-```bash
-helm upgrade --install kindergarten-email-checker charts/kindergarten-email-checker -n kindergarten
-```
-
-Follow the logs:
-
-```bash
-kubectl -n kindergarten logs -f deployment/kindergarten-email-checker
-```
-
-To run a branch build, add `--set image.tag=feature-imap-loop` to the `helm upgrade` command. `IMAGE_TAG` in `.env` has no effect on Kubernetes.
-
-The pod reads the secret only when it starts. After you change `.env`, replace the secret and restart the pod:
-
-```bash
-kubectl -n kindergarten create secret generic kindergarten-email-checker --from-env-file=.env --dry-run=client -o yaml | kubectl apply -f -
-```
-
-```bash
-kubectl -n kindergarten rollout restart deployment/kindergarten-email-checker
-```
-
-To remove it:
-
-```bash
-helm uninstall kindergarten-email-checker -n kindergarten
-```
-
-## Configuration
-
-All settings come from `.env`. [.env.example](.env.example) lists every variable with a comment.
-
-| Variable | Meaning |
-|---|---|
-| `IMAP_USER`, `IMAP_PASSWORD` | Dedicated Gmail address and its app password |
-| `ALLOWED_SENDERS` | Comma-separated addresses or `@domain` suffixes. Anything else goes to `Ignored` |
-| `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | DeepSeek's Anthropic-compatible endpoint, key and model |
-| `LLM_EFFORT` | Thinking effort: `low`, `high` or `max` |
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Bot token and the group id |
-| `SWEEP_MINUTES` | Fallback poll interval when IDLE delivers nothing |
-| `MAX_ATTACHMENT_MB` | Larger attachments are not sent to the model. The post still lists their names |
-| `MAX_RETRIES_PER_MESSAGE` | Attempts before an email is moved to `Failed` |
-| `IMAGE_TAG` | Image tag to run, default `latest` |
-| `TZ` | Timezone used to resolve dates in emails, default `America/Argentina/Buenos_Aires` |
-
-## CI pipeline
-
-The workflow is in [.github/workflows/ci.yml](.github/workflows/ci.yml). It has two jobs.
-
-| Job | What it does | When it runs |
-|---|---|---|
-| `test` | Ruff lint, Ruff format check, pytest | Manual run from any branch. Pull request opened or updated |
-| `build-and-push` | Builds the Docker image and pushes it to `ghcr.io/dev1l/kindergarten-email-checker` | Manual run from any branch, after `test` passes. Merge to `main` |
-
-Image tags:
-
-- `latest`: the last build from `main`.
-- Branch name, for example `feature-imap-loop`: the last build from that branch.
-- `sha-<commit>`: one tag for each build.
-
-To start a manual run: Actions, CI, Run workflow, then select the branch.
-
-## Local development
-
-Python 3.10 or newer. The container uses 3.13.
-
-```bash
-python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"
-ruff check .
-pytest
-```
-
-Build and run the image locally:
-
-```bash
-docker build -t kindergarten-email-checker .
-docker run --rm --env-file .env kindergarten-email-checker
-```
-
-Run the tool locally without Docker, with a filled `.env` in the project directory:
-
-```bash
-python -m kindergarten_email_checker
-```
+- [Architecture](docs/ARCHITECTURE.md)
+- [Setup guide](docs/SETUP.md)
+- [Operations guide](docs/OPERATIONS.md)
