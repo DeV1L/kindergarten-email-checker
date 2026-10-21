@@ -53,11 +53,6 @@ def close(mailbox: MailBox) -> None:
         mailbox.logout()
 
 
-def wait_for_mail(mailbox: MailBox, timeout_seconds: int) -> None:
-    """Block on IMAP IDLE until the server reports a change or the timeout passes."""
-    mailbox.idle.wait(timeout=timeout_seconds)
-
-
 def fetch_unseen(mailbox: MailBox) -> list[MailMessage]:
     """Return unseen messages in the current folder without setting the Seen flag."""
     return list(mailbox.fetch(AND(seen=False), mark_seen=False, bulk=True))

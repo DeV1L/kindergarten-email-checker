@@ -1,7 +1,7 @@
 """Process entry point and the main loop (docs/ARCHITECTURE.md, sections 4 and 5).
 
-Connect, process every unseen email, wait with IDLE up to SWEEP_MINUTES, repeat.
-On an IMAP error: close the connection, wait 30 seconds and connect again.
+Every POLL_MINUTES: connect, process every unseen email, log out.
+An IMAP error ends the poll. The next poll tries again.
 """
 
 from __future__ import annotations
@@ -20,9 +20,8 @@ from kindergarten_email_checker.summarize import summarize
 
 log = logging.getLogger("kindergarten_email_checker")
 
-RECONNECT_DELAY_SECONDS = 30
-# A dropped connection: Gmail closed the session, the network changed, the machine slept.
-# These are normal and get one warning line. Any other error gets a full traceback.
+# A failed or dropped connection: the network is down, Gmail closed the session.
+# The next poll tries again, so these get one warning line. Any other error gets a traceback.
 CONNECTION_ERRORS = (imaplib.IMAP4.abort, OSError)
 
 
@@ -39,43 +38,41 @@ def run() -> int:
     for name in ("httpx", "httpx2"):
         logging.getLogger(name).setLevel(logging.WARNING)
     log.info(
-        "kindergarten-email-checker %s starting: mailbox=%s model=%s sweep=%s min",
+        "kindergarten-email-checker %s starting: mailbox=%s model=%s poll=%s min",
         __version__,
         settings.imap_user,
         settings.llm_model,
-        settings.sweep_minutes,
+        settings.poll_minutes,
     )
     loop(settings)
     return 0
 
 
 def loop(settings: Settings) -> None:
-    """Run forever. An IMAP error ends a session; the next session starts after a delay."""
+    """Run forever: one poll, then a pause of POLL_MINUTES."""
     attempts: dict[str, int] = {}  # uid -> failed attempts, reset on restart
     while True:
-        session(settings, attempts)
-        time.sleep(RECONNECT_DELAY_SECONDS)
+        poll(settings, attempts)
+        time.sleep(settings.poll_minutes * 60)
 
 
-def session(settings: Settings, attempts: dict[str, int]) -> None:
-    """Connect and process mail until an IMAP error. Always closes the connection."""
+def poll(settings: Settings, attempts: dict[str, int]) -> None:
+    """Connect, process every unseen email and log out. An IMAP error ends the poll early."""
     mailbox = None
     try:
         mailbox = mail.connect(settings)
-        log.info("connected to %s", settings.imap_host)
-        while True:
-            for message in mail.fetch_unseen(mailbox):
-                process(mailbox, message, settings, attempts)
-            mail.wait_for_mail(mailbox, settings.sweep_minutes * 60)
+        log.debug("connected to %s", settings.imap_host)
+        for message in mail.fetch_unseen(mailbox):
+            process(mailbox, message, settings, attempts)
     except CONNECTION_ERRORS as error:
         log.warning(
-            "IMAP connection failed or lost (%s: %s), reconnecting in %d s",
+            "IMAP connection failed or lost (%s: %s), next poll in %d min",
             type(error).__name__,
             error,
-            RECONNECT_DELAY_SECONDS,
+            settings.poll_minutes,
         )
     except Exception:
-        log.exception("IMAP error, reconnecting in %d s", RECONNECT_DELAY_SECONDS)
+        log.exception("IMAP error, next poll in %d min", settings.poll_minutes)
     finally:
         if mailbox is not None:
             mail.close(mailbox)
@@ -86,8 +83,8 @@ def process(
 ) -> None:
     """Handle one email and move it to its outcome label.
 
-    Errors in extraction, the model call or Telegram leave the email unseen, so the next cycle
-    tries again. IMAP errors are not caught here; they go up to the loop, which reconnects.
+    Errors in extraction, the model call or Telegram leave the email unseen, so the next poll
+    tries again. IMAP errors are not caught here; they end the poll.
     """
     uid, sender, subject = message.uid, message.from_, message.subject
     if not settings.sender_allowed(sender):

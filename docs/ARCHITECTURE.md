@@ -20,7 +20,7 @@ flowchart LR
     K[Kindergarten] -->|Spanish emails| P["Personal mailbox<br/>forwarding filter"]
     P -->|forwarded copy| G[("Dedicated Gmail<br/>labels: INBOX, Processed, Ignored, Failed")]
     subgraph VPS ["Server"]
-        C["Docker container<br/>Python, IMAP IDLE loop"]
+        C["Docker container<br/>Python, poll loop"]
     end
     G <-->|IMAP 993| C
     C -->|Anthropic Messages API| D["DeepSeek API<br/>deepseek-flash, thinking on"]
@@ -35,7 +35,7 @@ The container makes outbound connections only: IMAP to Gmail, HTTPS to DeepSeek 
 |---|---|---|
 | Personal mailbox | One filter forwards mail from the kindergarten senders to the dedicated account | Owner's mail provider |
 | Dedicated Gmail | Receives forwarded mail. Its labels are the only state (read "State model") | Google, app password over IMAP |
-| App container | Long-running Python process: IDLE loop, extraction, model call, Telegram | `src/kindergarten_email_checker/` |
+| App container | Long-running Python process: poll loop, extraction, model call, Telegram | `src/kindergarten_email_checker/` |
 | DeepSeek | Summarization, through the Anthropic Messages API format | `api.deepseek.com/anthropic` |
 | Telegram Bot API | Delivery to the private group | `api.telegram.org` |
 
@@ -43,9 +43,9 @@ Module map:
 
 | Module | Role |
 |---|---|
-| `main.py` | Entry point and the wake, fetch, process, move loop |
+| `main.py` | Entry point and the poll loop: connect, fetch, process, move, log out |
 | `config.py` | Settings from environment variables, allowlist matching |
-| `mail.py` | IMAP session, IDLE wait, fetching unseen mail, moving between labels |
+| `mail.py` | IMAP connection, fetching unseen mail, moving between labels |
 | `content.py` | HTML to text, PDF text extraction, rendering scanned pages, size caps |
 | `summarize.py` | Output schema, tool definition, the model call, validation and retry |
 | `telegram.py` | Message formatting, sendMessage, error posts |
@@ -53,19 +53,18 @@ Module map:
 
 ## Runtime loop
 
-1. On start: connect to IMAP, create the state labels if missing, process everything unseen.
-2. Forever: issue IMAP IDLE and wait up to `SWEEP_MINUTES`. Return on new mail or on timeout. Process everything unseen. Repeat.
-3. The sweep after a timeout catches anything IDLE missed and refreshes the session, which Gmail drops after roughly 30 minutes anyway.
-4. On any IMAP error: close the connection, wait 30 seconds, reconnect. A dropped connection (IMAP abort, socket, SSL or timeout error) is normal: Gmail closes sessions, networks change, laptops sleep. It gets one warning line without a traceback. Any other IMAP error gets a full traceback. The logout after a dropped connection fails too; that error is ignored. The loop never exits on its own.
-5. Socket timeouts on IMAP and HTTP calls, so a stalled connection cannot block the loop.
+1. Forever: poll the mailbox, then wait `POLL_MINUTES`. The first poll runs at start.
+2. A poll opens a new IMAP connection, creates the state labels if missing, processes everything unseen and logs out.
+3. An IMAP error ends the poll. The app closes the connection, and the next poll tries again. A failed or dropped connection (IMAP abort, socket, SSL or timeout error) gets one warning line without a traceback. Any other IMAP error gets a full traceback. The logout after a dropped connection fails too; that error is ignored. The loop never exits on its own.
+4. Socket timeouts on IMAP and HTTP calls, so a stalled connection cannot block the loop.
 
-Plain polling is the same loop without the IDLE call. It is the fallback if IDLE misbehaves with Gmail.
+The app does not use IMAP IDLE. IDLE needs a connection that stays open. Gmail and the network close such a connection a few times each day, and each drop writes a warning line. With a new connection for each poll, a drop is rare. The cost is a delay: a new email waits up to `POLL_MINUTES` for its post.
 
 ## Processing one email
 
 ```mermaid
 flowchart TD
-    A["Wake up<br/>IDLE push or sweep"] --> B["Fetch UNSEEN in INBOX<br/>without setting Seen"]
+    A["Poll<br/>after each POLL_MINUTES"] --> B["Fetch UNSEEN in INBOX<br/>without setting Seen"]
     B --> C{Sender on the allowlist?}
     C -->|no| I[Move to Ignored]
     C -->|yes| E["Extract content<br/>HTML to text, PDF text, page images, photos"]
@@ -91,13 +90,13 @@ stateDiagram-v2
     [*] --> INBOX: forwarded by the filter
     INBOX --> Ignored: sender not on the allowlist
     INBOX --> Processed: posted to Telegram
-    INBOX --> INBOX: transient error, retried next cycle
+    INBOX --> INBOX: transient error, retried in the next poll
     INBOX --> Failed: attempts exhausted, error posted
 ```
 
 - Unseen mail in `INBOX` is the queue. Fetching uses `mark_seen=False`; moving the email is the only state change the app makes.
 - Moves use the IMAP MOVE command. After login the app reads the server's capability list again, because Gmail lists MOVE only after login. Without MOVE, the move falls back to copy and delete, and with some Gmail settings the email goes to Trash.
-- The app creates the `Processed`, `Ignored` and `Failed` labels at start if they do not exist.
+- Each poll creates the `Processed`, `Ignored` and `Failed` labels if they do not exist.
 - Telegram is called before the move. A crash between the two produces one duplicate post, never a lost one.
 - A per-UID attempt counter lives in memory. After `MAX_RETRIES_PER_MESSAGE` failures the email is moved to `Failed` and the error is posted once. The counter resets on restart, which only grants a few extra attempts.
 - No database. Everything the app knows is visible in the Gmail web UI, which doubles as the admin interface.
@@ -175,7 +174,7 @@ IMAP errors are described in "Runtime loop".
 
 | Failure | Behaviour |
 |---|---|
-| Model timeout, 5xx, 429 | Attempt counter +1, email stays unseen, retried next cycle |
+| Model timeout, 5xx, 429 | Attempt counter +1, email stays unseen, retried in the next poll |
 | Model output invalid twice in one attempt | Original text forwarded, email `Processed` |
 | Telegram error | Attempt counter +1, email stays unseen |
 | Attempts exhausted | Moved to `Failed`, error posted once |
