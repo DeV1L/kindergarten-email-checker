@@ -1,16 +1,14 @@
 # kindergarten-email-checker
 
-The app reads the emails that a kindergarten sends in Spanish. Writes a short summary in Russian with urgency, deadline and event date. Posts the summary to a private Telegram group. The tool runs as one Docker container (on a VPS or k8s). It reads only a dedicated mailbox that gets the forwarded kindergarten emails.
+The app reads the emails that a kindergarten sends in Spanish. Writes a short summary in Russian with urgency, deadline and event date. Posts the summary to a private Telegram group. The app runs as one Docker container on a VPS or on Kubernetes. It reads only a dedicated mailbox that gets the forwarded kindergarten emails.
 
 ## How it works
 
 1. A forwarding filter in the personal mailbox forwards the emails from the kindergarten addresses to the dedicated mailbox.
 2. The container stays connected to the dedicated mailbox and gets each new email when it arrives. It also checks the mailbox every 10 minutes (configurable), in case it missed an email.
-3. The tool checks each unseen email against the sender allowlist and converts it to text. It sends the text to DeepSeek (`deepseek-flash`, thinking on) through the Anthropic-compatible API. PDFs and images go along as text or page images.
+3. The app checks each unseen email against the sender allowlist and converts it to text. It sends the text to DeepSeek (`deepseek-flash`, thinking on) through the Anthropic-compatible API. PDFs and images go along as text or page images.
 4. The model returns a structured summary: Russian title and summary, urgency, category, action, deadline, event date.
-5. The tool posts the summary to the group in Telegram. When the email has attachments, the post lists their names. Then the tool moves the email to the `Processed` label.
-
-The tool sends all posts the same way. Urgency is only a label in the post.
+5. The app posts the summary to the group in Telegram. When the email has attachments, the post lists their names. Then the app moves the email to the `Processed` label.
 
 Gmail labels are the only state: `INBOX` is the queue; `Processed`, `Ignored` and `Failed` record the outcome. There is no database.
 
@@ -30,7 +28,7 @@ Gmail labels are the only state: `INBOX` is the queue; `Processed`, `Ignored` an
 
 ## Requirements
 
-- A Gmail account that only this tool uses
+- A Gmail account that only this app uses
 - A Telegram account
 - A DeepSeek API key
 
@@ -43,7 +41,7 @@ The full procedure, with every command, is in [docs/SETUP.md](docs/SETUP.md). Th
 3. Create the Telegram bot and the group.
 4. Create the DeepSeek API key.
 5. Fill in `.env`.
-6. Start the container with `docker compose up -d`.
+6. Start the app.
 
 ## Documentation
 

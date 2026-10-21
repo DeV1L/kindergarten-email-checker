@@ -1,6 +1,6 @@
 # Setup guide
 
-This guide creates the accounts that the tool needs. Then it starts the tool on a VPS or on Kubernetes.
+This guide creates the accounts that the app needs. Then it starts the app in one of three ways: local development, Docker Compose on a VPS, or Kubernetes.
 
 ## Values to collect
 
@@ -55,11 +55,126 @@ curl -s "https://api.telegram.org/bot<bot token>/getUpdates"
 2. Create an API key. Store it as `<DeepSeek key>`.
 3. Add money to the balance.
 
-## 5. Run the tool on the VPS
+## 5. Settings
 
-The VPS needs only `compose.yaml` and `.env`. It does not build the image. It pulls the public image from ghcr.io. No login is needed.
+The app reads all settings from environment variables. All three deployment options get them from the file `.env`. The template is [.env.example](../.env.example), with a comment for each variable. Step 6 tells where to create `.env` for each option.
 
-1. Create a directory for the tool:
+Set these values in `.env`:
+
+| Variable | Value |
+|----------|-------|
+| `IMAP_USER` | `<dedicated address>` |
+| `IMAP_PASSWORD` | `<app password>` |
+| `ALLOWED_SENDERS` | The kindergarten addresses or `@domain` suffixes, separated by commas. The app moves email from all other senders to `Ignored` |
+| `LLM_API_KEY` | `<DeepSeek key>` |
+| `TELEGRAM_BOT_TOKEN` | `<bot token>` |
+| `TELEGRAM_CHAT_ID` | `<chat id>` |
+
+The other variables have defaults:
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `IMAP_HOST` | `imap.gmail.com` | The IMAP server of the dedicated mailbox |
+| `IMAP_FOLDER_INBOX`, `IMAP_FOLDER_PROCESSED`, `IMAP_FOLDER_IGNORED`, `IMAP_FOLDER_FAILED` | `INBOX`, `Processed`, `Ignored`, `Failed` | The names of the labels |
+| `LLM_BASE_URL` | `https://api.deepseek.com/anthropic` | The Anthropic-compatible endpoint of DeepSeek |
+| `LLM_MODEL` | `deepseek-flash` | The model |
+| `LLM_EFFORT` | `high` | Thinking effort: `low`, `high` or `max` |
+| `LLM_TIMEOUT_SECONDS` | `120` | Timeout of one model call |
+| `SWEEP_MINUTES` | `10` | Interval of the sweep, for the case that IDLE delivers nothing |
+| `MAX_ATTACHMENT_MB` | `10` | The app does not send larger attachments to the model. The post still lists their names |
+| `MAX_RETRIES_PER_MESSAGE` | `3` | Attempts before the app moves an email to `Failed` |
+| `TZ` | `America/Argentina/Buenos_Aires` | Timezone for the dates in emails and posts |
+| `LOG_LEVEL` | `INFO` | Log level |
+| `IMAGE_TAG` | `latest` | The image tag. Only Docker Compose reads it |
+
+## 6. Start the app
+
+Choose one deployment option:
+
+| Option | Where the app runs | Image |
+|--------|--------------------|-------|
+| Local development | The local computer, in a clone of the repository | No image, or an image built locally |
+| Docker Compose | A VPS | Pulled from ghcr.io |
+| Kubernetes | A cluster, with the Helm chart | Pulled from ghcr.io |
+
+CI builds the image `ghcr.io/dev1l/kindergarten-email-checker` from the `Dockerfile` and pushes it. The image is public, so a pull needs no login. The image is based on `python:3.13-slim`. pip installs the dependencies from `pyproject.toml`. The app runs as the non-root user `app` (id 10001). The image tags are in "CI pipeline" in the [operations guide](OPERATIONS.md).
+
+CAUTION: run only one instance of the app for each mailbox. Two instances read the same emails, and one email gets two posts. Before you start a second instance for a test, stop the first one, or use a different mailbox and group.
+
+### Local development
+
+The app needs Python 3.10 or newer. The image uses Python 3.13.
+
+1. Clone the repository:
+
+```bash
+git clone https://github.com/DeV1L/kindergarten-email-checker.git && cd kindergarten-email-checker
+```
+
+2. Create a virtual environment and activate it:
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+```
+
+3. Install the package with the development tools:
+
+```bash
+pip install -e ".[dev]"
+```
+
+4. Copy the settings template and make it readable only for its owner:
+
+```bash
+cp .env.example .env && chmod 600 .env
+```
+
+5. Edit `.env`. Set the values from step 5.
+6. Run the linter and the format check:
+
+```bash
+ruff check . && ruff format --check .
+```
+
+7. Run the tests:
+
+```bash
+pytest
+```
+
+8. Start the app. It reads `.env` from the current directory:
+
+```bash
+python -m kindergarten_email_checker
+```
+
+To test the image, build it and run it with the same `.env`:
+
+1. Build the image:
+
+```bash
+docker build -t kindergarten-email-checker .
+```
+
+2. Run the container:
+
+```bash
+docker run --rm --env-file .env kindergarten-email-checker
+```
+
+### Docker Compose on a VPS
+
+The VPS needs only `compose.yaml` and `.env`. It pulls the image and does not build it. [compose.yaml](../compose.yaml) sets:
+
+| Setting | Value |
+|---------|-------|
+| Image | `ghcr.io/dev1l/kindergarten-email-checker`, with the tag from `IMAGE_TAG` |
+| Restart | `unless-stopped`: Docker starts the container again after a crash or a reboot |
+| Root filesystem | Read-only, with a tmpfs at `/tmp` |
+| Memory limit | 256 MB |
+| Logs | json-file, rotated at 3 files of 10 MB |
+
+1. Create a directory for the app:
 
 ```bash
 mkdir kindergarten-email-checker && cd kindergarten-email-checker
@@ -83,34 +198,30 @@ curl -fsSL https://raw.githubusercontent.com/DeV1L/kindergarten-email-checker/ma
 chmod 600 .env
 ```
 
-5. Edit `.env`. Set these values:
-
-| Variable | Value |
-|----------|-------|
-| `IMAP_USER` | `<dedicated address>` |
-| `IMAP_PASSWORD` | `<app password>` |
-| `ALLOWED_SENDERS` | The kindergarten addresses or `@domain` suffixes |
-| `LLM_API_KEY` | `<DeepSeek key>` |
-| `TELEGRAM_BOT_TOKEN` | `<bot token>` |
-| `TELEGRAM_CHAT_ID` | `<chat id>` |
-
+5. Edit `.env`. Set the values from step 5.
 6. Pull the image and start the container:
 
 ```bash
 docker compose pull && docker compose up -d
 ```
 
-7. Follow the logs:
+7. Check the logs. Read "Follow the logs" in the [operations guide](OPERATIONS.md).
 
-```bash
-docker compose logs -f
-```
+### Kubernetes
 
-## 6. Run the tool on Kubernetes (optional)
+The Helm chart is in [charts/kindergarten-email-checker](../charts/kindergarten-email-checker). It creates one Deployment and nothing else: no Service, no ingress, no volume except an `emptyDir` at `/tmp`. The chart sets:
 
-The Helm chart is in [charts/kindergarten-email-checker](../charts/kindergarten-email-checker). It runs the same image as `compose.yaml`. It uses the same `.env`. Run the commands from the root of a clone of the repository.
+| Setting | Value |
+|---------|-------|
+| Replicas | Exactly 1, with the `Recreate` strategy. Two pods never read the mailbox at the same time |
+| Image | `image.repository` and `image.tag` in the chart values. The default tag is `latest`. `IMAGE_TAG` in `.env` has no effect |
+| Pull policy | `Always` |
+| User | 10001, non-root |
+| Security | Read-only root filesystem, no capabilities, no privilege escalation, no service account token |
+| Resources | Memory request and limit 128 MiB, CPU request 50m |
+| Settings | All variables come from an existing secret, `existingSecret` in the chart values, default `kindergarten-email-checker`. The chart does not create or hold secrets. `env` in the chart values overrides single variables |
 
-CAUTION: run only one instance for each mailbox. When the VPS container and the cluster read the same mailbox, one email can get two posts. Stop the VPS container first, or use a different mailbox and group for the test.
+Run the commands from the root of a clone of the repository.
 
 1. Create a namespace:
 
@@ -118,38 +229,23 @@ CAUTION: run only one instance for each mailbox. When the VPS container and the 
 kubectl create namespace kindergarten
 ```
 
-2. Write the values in `.env` without quotes. `--from-env-file` does not remove quotes.
-3. Create a secret from `.env`:
+2. Copy the settings template and make it readable only for its owner:
+
+```bash
+cp .env.example .env && chmod 600 .env
+```
+
+3. Edit `.env`. Set the values from step 5. Write the values without quotes, because `--from-env-file` does not remove quotes.
+4. Create the secret from `.env`:
 
 ```bash
 kubectl -n kindergarten create secret generic kindergarten-email-checker --from-env-file=.env
 ```
 
-4. Install the chart:
+5. Install the chart:
 
 ```bash
 helm upgrade --install kindergarten-email-checker charts/kindergarten-email-checker -n kindergarten
 ```
 
-5. Follow the logs:
-
-```bash
-kubectl -n kindergarten logs -f deployment/kindergarten-email-checker
-```
-
-## Settings
-
-All settings come from `.env`. [.env.example](../.env.example) lists every variable with a comment.
-
-| Variable | Meaning |
-|----------|---------|
-| `IMAP_USER`, `IMAP_PASSWORD` | The address of the dedicated mailbox and its app password |
-| `ALLOWED_SENDERS` | Comma-separated addresses or `@domain` suffixes. The tool moves email from all other senders to `Ignored` |
-| `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` | The Anthropic-compatible endpoint of DeepSeek, the key and the model |
-| `LLM_EFFORT` | Thinking effort: `low`, `high` or `max` |
-| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | The bot token and the group id |
-| `SWEEP_MINUTES` | Interval of the sweep, for the case that IDLE delivers nothing |
-| `MAX_ATTACHMENT_MB` | The tool does not send larger attachments to the model. The post still lists their names |
-| `MAX_RETRIES_PER_MESSAGE` | Attempts before the tool moves an email to `Failed` |
-| `IMAGE_TAG` | Image tag to run with Compose, default `latest` |
-| `TZ` | Timezone for the dates in emails, default `America/Argentina/Buenos_Aires` |
+6. Check the logs. Read "Follow the logs" in the [operations guide](OPERATIONS.md).

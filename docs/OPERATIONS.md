@@ -1,8 +1,10 @@
 # Operations guide
 
-This guide describes daily tasks for the tool. On the VPS, run the commands in the directory with `compose.yaml` and `.env`. For Kubernetes, run the commands from the repository root.
+This guide describes daily tasks for the app on Docker Compose and on Kubernetes. On the VPS, run the commands in the directory with `compose.yaml` and `.env`. For Kubernetes, run the commands from the repository root.
 
 ## Follow the logs
+
+The app writes one log line for each processed email: UID, sender, subject, urgency, deadline, Telegram message id and duration. An invalid model answer gives one warning line with a JSON object: the problem, the input of the tool call and the validation errors. The app also posts failures to the group, so the owner sees them where the summaries are.
 
 On the VPS:
 
@@ -16,36 +18,45 @@ On Kubernetes:
 kubectl -n kindergarten logs -f deployment/kindergarten-email-checker
 ```
 
-## Update the tool on the VPS
+## Update the app
 
-Pull the last build from `main` and start it:
+On the VPS, `IMAGE_TAG` in `.env` selects the image tag.
 
-```bash
-docker compose pull && docker compose up -d
-```
-
-## Run a branch build
-
-CI tags each branch build with the branch name, with `/` replaced by `-`. For example, the branch `feature/imap-loop` gives the tag `feature-imap-loop`.
-
-On the VPS:
-
-1. Set `IMAGE_TAG` in `.env` to the branch tag, for example `IMAGE_TAG=feature-imap-loop`.
-2. Pull the image and start it:
+1. To run a branch build, set `IMAGE_TAG` to the branch tag, for example `IMAGE_TAG=feature-imap-loop`. To go back to the last build from `main`, set `IMAGE_TAG=latest`.
+2. Pull the image and start the container:
 
 ```bash
 docker compose pull && docker compose up -d
 ```
 
-On Kubernetes, `IMAGE_TAG` in `.env` has no effect. Set the chart value `image.tag`:
+On Kubernetes, the chart value `image.tag` selects the image tag. The pull policy is `Always`, so each new pod pulls the image again.
+
+- To run the last build of the current tag, restart the pod:
+
+```bash
+kubectl -n kindergarten rollout restart deployment/kindergarten-email-checker
+```
+
+- To run a branch build, set `image.tag`. To go back to the last build from `main`, use `image.tag=latest`:
 
 ```bash
 helm upgrade --install kindergarten-email-checker charts/kindergarten-email-checker -n kindergarten --set image.tag=feature-imap-loop
 ```
 
-## Change a setting on Kubernetes
+## Change a setting
 
-The pod reads the secret only when it starts.
+The app reads the settings only when it starts.
+
+On the VPS:
+
+1. Edit `.env`.
+2. Create the container again with the new settings:
+
+```bash
+docker compose up -d --force-recreate
+```
+
+On Kubernetes:
 
 1. Edit `.env`.
 2. Replace the secret:
@@ -60,7 +71,7 @@ kubectl -n kindergarten create secret generic kindergarten-email-checker --from-
 kubectl -n kindergarten rollout restart deployment/kindergarten-email-checker
 ```
 
-## Remove the tool from Kubernetes
+## Remove the app from Kubernetes
 
 ```bash
 helm uninstall kindergarten-email-checker -n kindergarten
@@ -75,12 +86,14 @@ The workflow is in [.github/workflows/ci.yml](../.github/workflows/ci.yml). It h
 | `test` | Ruff lint, Ruff format check, pytest | Manual run from any branch. Pull request opened or updated |
 | `build-and-push` | Builds the Docker image and pushes it to `ghcr.io/dev1l/kindergarten-email-checker` | Manual run from any branch, after `test` passes. Merge to `main` |
 
+On a merge to `main`, the tests do not run again. They ran on the pull request.
+
 Image tags:
 
 | Tag | Image |
 |-----|-------|
 | `latest` | The last build from `main` |
-| Branch name, for example `feature-imap-loop` | The last build from that branch |
+| Branch name, with `/` replaced by `-` | The last build from that branch. For example, the branch `feature/imap-loop` gives the tag `feature-imap-loop` |
 | `sha-<commit>` | One tag for each build |
 
 Start a manual run:
@@ -88,47 +101,3 @@ Start a manual run:
 1. In the repository on GitHub, click the **Actions** tab.
 2. Click the workflow **CI**.
 3. Click **Run workflow**. Select the branch.
-
-## Local development
-
-The tool needs Python 3.10 or newer. The container uses Python 3.13.
-
-1. Create a virtual environment and activate it:
-
-```bash
-python3 -m venv .venv && . .venv/bin/activate
-```
-
-2. Install the package with the development tools:
-
-```bash
-pip install -e ".[dev]"
-```
-
-3. Run the linter:
-
-```bash
-ruff check .
-```
-
-4. Run the tests:
-
-```bash
-pytest
-```
-
-Build and run the image locally:
-
-```bash
-docker build -t kindergarten-email-checker .
-```
-
-```bash
-docker run --rm --env-file .env kindergarten-email-checker
-```
-
-Run the tool locally without Docker. Put a filled `.env` in the project directory first:
-
-```bash
-python -m kindergarten_email_checker
-```
