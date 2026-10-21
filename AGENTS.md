@@ -61,5 +61,5 @@ Glossary:
 | group | The private Telegram group |
 | post | A message that the bot sends to the group |
 | summary | The model output for one email |
-| sweep | The check of the mailbox after each `SWEEP_MINUTES` |
+| poll | One visit to the dedicated mailbox every `POLL_MINUTES`: connect, process the unseen emails, log out |
 | owner | The person who runs this project |

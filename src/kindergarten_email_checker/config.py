@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     telegram_chat_id: str
 
     # Loop
-    sweep_minutes: int = 10
+    poll_minutes: int = 10
     max_attachment_mb: int = 10
     max_retries_per_message: int = 3
     log_level: str = "INFO"

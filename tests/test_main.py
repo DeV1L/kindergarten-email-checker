@@ -59,10 +59,29 @@ def test_failures_retry_then_move_to_failed(calls, monkeypatch):
     settings, attempts = make_settings(max_retries_per_message=3), {}
     for _ in range(2):
         main.process(None, make_message(), settings, attempts)
-    assert calls == {"moves": [], "posts": []}  # still unseen, retried next cycle
+    assert calls == {"moves": [], "posts": []}  # still unseen, retried in the next poll
     main.process(None, make_message(), settings, attempts)
     assert calls == {"moves": ["Failed"], "posts": ["error"]}
     assert attempts == {}
+
+
+class ClosingMailbox:
+    """A mailbox that records the logout."""
+
+    logout_called = False
+
+    def logout(self):
+        self.logout_called = True
+
+
+def test_poll_processes_unseen_and_logs_out(calls, monkeypatch):
+    mailbox = ClosingMailbox()
+    monkeypatch.setattr(main.mail, "connect", lambda settings: mailbox)
+    monkeypatch.setattr(main.mail, "fetch_unseen", lambda mb: [make_message(), make_message()])
+    monkeypatch.setattr(main, "summarize", lambda content, settings: FakeSummary())
+    main.poll(make_settings(), {})
+    assert calls == {"moves": ["Processed"] * 2, "posts": ["summary"] * 2}
+    assert mailbox.logout_called
 
 
 class DroppingMailbox:
@@ -77,7 +96,7 @@ class DroppingMailbox:
         raise imaplib.IMAP4.abort("socket error: EOF occurred in violation of protocol")
 
 
-def run_session(monkeypatch, caplog, error):
+def run_poll(monkeypatch, caplog, error):
     mailbox = DroppingMailbox(error)
     monkeypatch.setattr(main.mail, "connect", lambda settings: mailbox)
 
@@ -86,12 +105,12 @@ def run_session(monkeypatch, caplog, error):
 
     monkeypatch.setattr(main.mail, "fetch_unseen", fetch)
     with caplog.at_level(logging.INFO, logger="kindergarten_email_checker"):
-        main.session(make_settings(), {})  # returns instead of raising
+        main.poll(make_settings(), {})  # returns instead of raising
     return mailbox
 
 
 def test_dropped_connection_logs_one_warning_line(monkeypatch, caplog):
-    mailbox = run_session(monkeypatch, caplog, imaplib.IMAP4.abort("socket error: EOF"))
+    mailbox = run_poll(monkeypatch, caplog, imaplib.IMAP4.abort("socket error: EOF"))
     assert mailbox.logout_called
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1
@@ -100,6 +119,6 @@ def test_dropped_connection_logs_one_warning_line(monkeypatch, caplog):
 
 
 def test_other_imap_error_keeps_the_traceback(monkeypatch, caplog):
-    run_session(monkeypatch, caplog, ValueError("unexpected"))
+    run_poll(monkeypatch, caplog, ValueError("unexpected"))
     errors = [r for r in caplog.records if r.levelno == logging.ERROR]
     assert len(errors) == 1 and errors[0].exc_info is not None

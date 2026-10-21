@@ -80,7 +80,7 @@ The other variables have defaults:
 | `LLM_MODEL` | `deepseek-flash` | The model |
 | `LLM_EFFORT` | `high` | Thinking effort: `low`, `high` or `max` |
 | `LLM_TIMEOUT_SECONDS` | `120` | Timeout of one model call |
-| `SWEEP_MINUTES` | `10` | Interval of the sweep, for the case that IDLE delivers nothing |
+| `POLL_MINUTES` | `10` | Minutes between two polls. A new email waits up to this time for its post |
 | `MAX_ATTACHMENT_MB` | `10` | The app does not send larger attachments to the model. The post still lists their names |
 | `MAX_RETRIES_PER_MESSAGE` | `3` | Attempts before the app moves an email to `Failed` |
 | `TZ` | `America/Argentina/Buenos_Aires` | Timezone for the dates in emails and posts |
