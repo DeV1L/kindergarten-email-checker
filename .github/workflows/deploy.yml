@@ -1,0 +1,38 @@
+name: Deploy
+
+# Manual runs only. Deploys the chart from the branch in "Use workflow from" with an image tag.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Image tag, for example latest, feature-imap-loop or sha-1a2b3c4
+        required: true
+        default: latest
+
+# One deploy at a time. A second run waits for the first one.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Write the kubeconfig
+        env:
+          KUBECONFIG: ${{ secrets.KUBECONFIG }}
+        run: |
+          umask 077
+          printf '%s\n' "$KUBECONFIG" > "$RUNNER_TEMP/kubeconfig"
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+      # The chart replaces the pod on each upgrade, so the new pod pulls the tag again.
+      - name: Deploy
+        run: >
+          helm upgrade --install kindergarten-email-checker charts/kindergarten-email-checker
+          --namespace kindergarten
+          --set-string image.tag="$TAG"
