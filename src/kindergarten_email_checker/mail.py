@@ -13,12 +13,10 @@ from imap_tools import AND, MailBox, MailMessage
 
 from kindergarten_email_checker.config import Settings
 
-SOCKET_TIMEOUT_SECONDS = 60
-
 
 def connect(settings: Settings) -> MailBox:
     """Log in, open the inbox label and create the state labels if missing."""
-    mailbox = MailBox(settings.imap_host, timeout=SOCKET_TIMEOUT_SECONDS)
+    mailbox = MailBox(settings.imap_host, timeout=settings.imap_timeout_seconds)
     mailbox.login(
         settings.imap_user, settings.imap_password, initial_folder=settings.imap_folder_inbox
     )

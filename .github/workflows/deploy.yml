@@ -30,9 +30,9 @@ jobs:
           umask 077
           printf '%s\n' "$KUBECONFIG" > "$RUNNER_TEMP/kubeconfig"
           echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
-      # The chart replaces the pod on each upgrade, so the new pod pulls the tag again.
       - name: Deploy
         run: >
           helm upgrade --install kindergarten-email-checker charts/kindergarten-email-checker
           --namespace kindergarten
           --set-string image.tag="$TAG"
+          --wait

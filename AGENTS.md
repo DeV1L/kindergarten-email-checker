@@ -10,7 +10,7 @@ Start with `README.md`, `docs/SETUP.md` and `docs/OPERATIONS.md`. They describe 
 - The app reads only the dedicated mailbox. Never add code that touches the personal mailbox.
 - Gmail labels are the only state. No database, no files that must survive a restart.
 - Secrets come only from `.env`. Never log a secret, never put a secret into the image. Never print a secret value in your output.
-- Keep the code plain and simple. No abstraction for one caller, no setting for a constant, no framework where a function is enough.
+- Keep the code plain and simple. No abstraction for one caller, no framework where a function is enough.
 
 ## Model and posts
 

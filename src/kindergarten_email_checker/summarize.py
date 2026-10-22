@@ -2,6 +2,7 @@
 
 One Anthropic Messages API request to DeepSeek with thinking enabled. The summary comes back
 as the input of a `report_summary` tool call and is validated against `Summary`.
+The start check reads the DeepSeek balance.
 """
 
 from __future__ import annotations
@@ -10,11 +11,13 @@ import base64
 import json
 import logging
 from datetime import date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
 import anthropic
+import httpx
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from kindergarten_email_checker.config import Settings
@@ -22,8 +25,6 @@ from kindergarten_email_checker.content import EmailContent
 
 log = logging.getLogger(__name__)
 
-TOOL_NAME = "report_summary"
-MAX_TOKENS = 16_000  # thinking and the tool call together
 SYSTEM_PROMPT = (Path(__file__).parent / "prompt.md").read_text(encoding="utf-8")
 
 Urgency = Literal["low", "medium", "high"]
@@ -63,13 +64,38 @@ class Summary(BaseModel):
         return value
 
 
-def tool_definition() -> dict:
+def tool_definition(settings: Settings) -> dict:
     """Tool whose input schema is the Summary model, for the `tools` request parameter."""
     return {
-        "name": TOOL_NAME,
+        "name": settings.llm_tool_name,
         "description": "Report the structured Russian summary of the kindergarten email.",
         "input_schema": Summary.model_json_schema(),
     }
+
+
+class BalanceError(Exception):
+    pass
+
+
+def check_balance(settings: Settings) -> str:
+    """GET /user/balance. Fails on a wrong key or a zero balance. Returns the balance as text."""
+    response = httpx.get(
+        httpx.URL(settings.llm_base_url).join("/user/balance"),
+        headers={"Authorization": f"Bearer {settings.llm_api_key}"},
+        timeout=settings.llm_balance_timeout_seconds,
+    )
+    data = response.json()
+    if response.status_code != 200:
+        message = data.get("error", {}).get("message")
+        raise BalanceError(f"user/balance failed: {response.status_code} {message}")
+    balances = [
+        f"{info['total_balance']} {info['currency']}"
+        for info in data["balance_infos"]
+        if Decimal(info["total_balance"]) > 0
+    ]
+    if not balances:
+        raise BalanceError("the DeepSeek balance is zero")
+    return ", ".join(balances)
 
 
 def make_client(settings: Settings) -> anthropic.Anthropic:
@@ -88,31 +114,32 @@ def summarize(
     API errors (timeout, 5xx, 429 after the SDK's own retries) are raised to the caller.
     """
     client = client or make_client(settings)
+    tool_name = settings.llm_tool_name
     messages: list[dict] = [{"role": "user", "content": user_content(content, settings)}]
     for attempt in (1, 2):
         response = client.messages.create(
             model=settings.llm_model,
-            max_tokens=MAX_TOKENS,
-            system=SYSTEM_PROMPT,
+            max_tokens=settings.llm_max_tokens,
+            system=SYSTEM_PROMPT.replace("{TOOL_NAME}", tool_name),
             messages=messages,
-            tools=[tool_definition()],
+            tools=[tool_definition(settings)],
             # DeepSeek rejects a forced tool_choice with thinking on. prompt.md asks for the call.
             tool_choice={"type": "auto"},
             thinking={"type": "enabled", "budget_tokens": 8000},  # DeepSeek ignores the budget
             output_config={"effort": settings.llm_effort},
         )
         tool_use = next(
-            (b for b in response.content if b.type == "tool_use" and b.name == TOOL_NAME), None
+            (b for b in response.content if b.type == "tool_use" and b.name == tool_name), None
         )
         if tool_use is None:
-            problem = {"problem": f"no {TOOL_NAME} call", "stop_reason": response.stop_reason}
-            retry_turn = {"role": "user", "content": f"Call the {TOOL_NAME} tool."}
+            problem = {"problem": f"no {tool_name} call", "stop_reason": response.stop_reason}
+            retry_turn = {"role": "user", "content": f"Call the {tool_name} tool."}
         else:
             try:
                 return Summary.model_validate(tool_use.input)
             except ValidationError as error:
                 problem = {
-                    "problem": f"invalid {TOOL_NAME} input",
+                    "problem": f"invalid {tool_name} input",
                     "input": tool_use.input,
                     "errors": json.loads(error.json(include_url=False)),
                 }
@@ -123,7 +150,7 @@ def summarize(
                             "type": "tool_result",
                             "tool_use_id": tool_use.id,
                             "is_error": True,
-                            "content": f"{error}\nCall {TOOL_NAME} again with corrected input.",
+                            "content": f"{error}\nCall {tool_name} again with corrected input.",
                         }
                     ],
                 }

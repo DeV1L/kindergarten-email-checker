@@ -19,12 +19,6 @@ from kindergarten_email_checker.config import Settings
 log = logging.getLogger(__name__)
 
 IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-MIN_IMAGE_BYTES = 20 * 1024  # smaller images are logos and signature graphics
-MAX_PDF_PAGES_RENDERED = 10
-PDF_TEXT_MIN_CHARS_PER_PAGE = 200
-PDF_RENDER_SCALE = 110 / 72  # about 110 dpi
-MAX_BODY_CHARS = 40_000
-MAX_PDF_TEXT_CHARS = 20_000
 
 
 @dataclass
@@ -51,14 +45,14 @@ def extract(message: MailMessage, settings: Settings) -> EmailContent:
         sender=message.from_,
         subject=message.subject or "(без темы)",
         sent_at=sent_at.astimezone(tz),
-        text=body_text(message),
+        text=body_text(message, settings),
     )
     max_bytes = settings.max_attachment_mb * 1024 * 1024
     for att in message.attachments:
         name = att.filename or "без имени"
         data = att.payload
         media_type = guess_media_type(att.content_type, name)
-        if media_type in IMAGE_TYPES and len(data) < MIN_IMAGE_BYTES:
+        if media_type in IMAGE_TYPES and len(data) < settings.min_image_bytes:
             continue  # logo or signature graphic: not listed, not sent
         content.attachment_names.append(name)
         if len(data) > max_bytes:
@@ -66,9 +60,9 @@ def extract(message: MailMessage, settings: Settings) -> EmailContent:
         elif media_type in IMAGE_TYPES:
             content.images.append((media_type, data))
         elif media_type == "application/pdf":
-            text, pages = pdf_to_text_or_images(data)
+            text, pages = pdf_to_text_or_images(data, settings)
             if text:
-                content.pdf_texts.append((name, text[:MAX_PDF_TEXT_CHARS]))
+                content.pdf_texts.append((name, text[: settings.max_pdf_text_chars]))
             elif pages:
                 content.images.extend(("image/png", page) for page in pages)
             else:
@@ -78,12 +72,12 @@ def extract(message: MailMessage, settings: Settings) -> EmailContent:
     return content
 
 
-def body_text(message: MailMessage) -> str:
+def body_text(message: MailMessage, settings: Settings) -> str:
     """Plain text part when present, otherwise the HTML part converted to text."""
     text = message.text.strip() or html_to_text(message.html)
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
-    if len(text) > MAX_BODY_CHARS:
-        text = text[:MAX_BODY_CHARS] + "\n[текст обрезан]"
+    if len(text) > settings.max_body_chars:
+        text = text[: settings.max_body_chars] + "\n[текст обрезан]"
     return text
 
 
@@ -103,7 +97,7 @@ def guess_media_type(content_type: str, filename: str) -> str:
     return content_type
 
 
-def pdf_to_text_or_images(data: bytes) -> tuple[str | None, list[bytes]]:
+def pdf_to_text_or_images(data: bytes, settings: Settings) -> tuple[str | None, list[bytes]]:
     """Extracted text when the PDF has a text layer, otherwise rendered PNG pages.
 
     Returns (None, []) when the PDF cannot be read.
@@ -115,11 +109,13 @@ def pdf_to_text_or_images(data: bytes) -> tuple[str | None, list[bytes]]:
         return None, []
     try:
         texts = [page.get_textpage().get_text_range() for page in pdf]
-        if texts and sum(len(t.strip()) for t in texts) / len(texts) > PDF_TEXT_MIN_CHARS_PER_PAGE:
+        chars_per_page = sum(len(t.strip()) for t in texts) / len(texts) if texts else 0
+        if chars_per_page > settings.pdf_text_min_chars_per_page:
             return "\n\n".join(t.strip() for t in texts), []
         pages = []
-        for index in range(min(len(pdf), MAX_PDF_PAGES_RENDERED)):
-            image = pdf[index].render(scale=PDF_RENDER_SCALE).to_pil()
+        for index in range(min(len(pdf), settings.max_pdf_pages_rendered)):
+            # PDF units are 1/72 inch.
+            image = pdf[index].render(scale=settings.pdf_render_dpi / 72).to_pil()
             buffer = io.BytesIO()
             image.save(buffer, format="PNG")
             pages.append(buffer.getvalue())

@@ -20,6 +20,35 @@ On Kubernetes:
 kubectl -n kindergarten logs -f deployment/kindergarten-email-checker
 ```
 
+## Health checks
+
+At start, the app checks Telegram, Gmail and DeepSeek. Telegram must accept the bot token and find the group. Gmail must accept the app password. DeepSeek must accept the API key, and the balance must be above zero. The app does not poll the mailbox before all three checks pass. The log line of a passed check shows the DeepSeek balance. After a failed check, the app writes one error line and stops. Docker or Kubernetes starts it again, with a longer delay after each failure. On Kubernetes, the pod status is then `CrashLoopBackOff`.
+
+On Kubernetes, two probes call an HTTP server in the app, port 8080:
+
+| Probe | Path | What it does |
+|-------|------|--------------|
+| Readiness | `/readyz` | The pod is ready after the start check passes. With wrong credentials, the pod stays not ready |
+| Liveness | `/livez` | Kubernetes restarts the container when the app does not answer |
+
+Show the pod. The column `READY` shows `1/1` after the start check. The column `RESTARTS` counts the restarts:
+
+```bash
+kubectl -n kindergarten get pods
+```
+
+Show why a probe failed. The reason is in the events at the end of the output:
+
+```bash
+kubectl -n kindergarten describe pods -l app.kubernetes.io/name=kindergarten-email-checker
+```
+
+Show why the start check failed:
+
+```bash
+kubectl -n kindergarten logs deployment/kindergarten-email-checker | grep "start check"
+```
+
 ## Update the app
 
 On the VPS, `IMAGE_TAG` in `.env` selects the image tag.
@@ -31,7 +60,19 @@ On the VPS, `IMAGE_TAG` in `.env` selects the image tag.
 docker compose pull && docker compose up -d
 ```
 
-On Kubernetes, the chart value `image.tag` selects the image tag. The pull policy is `Always`, so each new pod pulls the image again.
+On Kubernetes, deploy with the workflow **Deploy**:
+
+1. In the repository on GitHub, click the **Actions** tab.
+2. Click the workflow **Deploy**.
+3. Click **Run workflow**. In **Use workflow from**, select the branch. The workflow uses the chart from this branch.
+4. Keep the tag `latest`, or enter another image tag. The tags are in "CI pipeline".
+5. Click **Run workflow**.
+
+The workflow replaces the pod, and the new pod pulls the image again. The workflow waits until the new pod is ready. If the pod is not ready in 5 minutes, the workflow fails, for example with wrong credentials. The old pod keeps working. Read "Health checks". The one-time setup is in "Deploy from GitHub" in [SETUP.md](SETUP.md).
+
+To go back to an older build, run **Deploy** with the tag `sha-<commit>` of that build.
+
+Without GitHub, use Helm or kubectl. The chart value `image.tag` selects the image tag. The pull policy is `Always`, and each `helm upgrade` replaces the pod, so the new pod pulls the image again. The next run of **Deploy** replaces the values that you set with `--set`.
 
 - To run the last build of the current tag, restart the pod:
 
@@ -103,3 +144,5 @@ Start a manual run:
 1. In the repository on GitHub, click the **Actions** tab.
 2. Click the workflow **CI**.
 3. Click **Run workflow**. Select the branch.
+
+The workflow **Deploy** is in [.github/workflows/deploy.yml](../.github/workflows/deploy.yml). It runs only when you start it. Read "Update the app".

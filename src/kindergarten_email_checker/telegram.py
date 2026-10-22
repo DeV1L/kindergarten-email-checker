@@ -11,10 +11,6 @@ from kindergarten_email_checker.config import Settings
 from kindergarten_email_checker.content import EmailContent
 from kindergarten_email_checker.summarize import Summary
 
-API = "https://api.telegram.org"
-MAX_MESSAGE_CHARS = 4096
-TIMEOUT_SECONDS = 30
-
 URGENCY_LABEL = {"high": "🔴 High", "medium": "🟡 Medium", "low": "🟢 Low"}
 CATEGORY_LABEL = {
     "info": "ℹ️ Информация",
@@ -38,7 +34,7 @@ def ru_date(value: date) -> str:
     return f"{WEEKDAYS[value.weekday()]}, {value.day} {MONTHS[value.month - 1]}"
 
 
-def format_message(summary: Summary, content: EmailContent) -> str:
+def format_message(summary: Summary, content: EmailContent, settings: Settings) -> str:
     """Render the HTML message: header, title, summary, action, attachments, footer.
 
     The original email is not quoted. It stays in the dedicated mailbox.
@@ -58,7 +54,7 @@ def format_message(summary: Summary, content: EmailContent) -> str:
     if content.attachment_names:
         top.append("📎 Вложения: " + escape(", ".join(content.attachment_names)))
     top += ["", footer(content)]
-    return "\n".join(top)[:MAX_MESSAGE_CHARS]
+    return "\n".join(top)[: settings.telegram_max_message_chars]
 
 
 def footer(content: EmailContent) -> str:
@@ -72,19 +68,19 @@ def footer(content: EmailContent) -> str:
     return f"<i>{' · '.join(parts)}</i>"
 
 
-def format_original(content: EmailContent) -> str:
+def format_original(content: EmailContent, settings: Settings) -> str:
     """Fallback message when the model output is unusable. The only post that quotes the email."""
     top = ["⚠️ <b>Без сводки</b>: модель не вернула результат. Оригинал письма:"]
     if content.attachment_names:
         top.append("📎 Вложения: " + escape(", ".join(content.attachment_names)))
-    return with_original("\n".join(top), content)
+    return with_original("\n".join(top), content, settings)
 
 
-def with_original(top: str, content: EmailContent) -> str:
+def with_original(top: str, content: EmailContent, settings: Settings) -> str:
     """Add the original text in a collapsed quote and the footer, within Telegram's limit."""
     end_line = footer(content)
     start, end = "\n\n<blockquote expandable>", "</blockquote>\n"
-    budget = MAX_MESSAGE_CHARS - len(top) - len(start) - len(end) - len(end_line)
+    budget = settings.telegram_max_message_chars - len(top) - len(start) - len(end) - len(end_line)
     original = content.text
     if len(escape(original)) > budget:
         original = original[: max(budget - 1, 0)]
@@ -92,35 +88,46 @@ def with_original(top: str, content: EmailContent) -> str:
             original = original[: len(original) - 50]
         original = original + "…" if original else ""
     if not original:
-        return f"{top}\n\n{end_line}"[:MAX_MESSAGE_CHARS]
+        return f"{top}\n\n{end_line}"[: settings.telegram_max_message_chars]
     return f"{top}{start}{escape(original)}{end}{end_line}"
 
 
-def send_message(text: str, settings: Settings) -> int:
-    """sendMessage with HTML parse mode. Returns the message id."""
+def call(method: str, payload: dict, settings: Settings) -> dict:
+    """Call a Bot API method. Returns its result."""
     response = httpx.post(
-        f"{API}/bot{settings.telegram_bot_token}/sendMessage",
-        json={
-            "chat_id": settings.telegram_chat_id,
-            "text": text,
-            "parse_mode": "HTML",
-            "link_preview_options": {"is_disabled": True},
-        },
-        timeout=TIMEOUT_SECONDS,
+        f"{settings.telegram_base_url}/bot{settings.telegram_bot_token}/{method}",
+        json=payload,
+        timeout=settings.telegram_timeout_seconds,
     )
     data = response.json()
     if not data.get("ok"):
         # Build the error by hand: httpx errors include the URL, and the URL contains the token.
-        raise TelegramError(f"sendMessage failed: {response.status_code} {data.get('description')}")
-    return data["result"]["message_id"]
+        raise TelegramError(f"{method} failed: {response.status_code} {data.get('description')}")
+    return data["result"]
+
+
+def check(settings: Settings) -> None:
+    """getChat fails when the token is wrong, the chat id is wrong or the bot left the group."""
+    call("getChat", {"chat_id": settings.telegram_chat_id}, settings)
+
+
+def send_message(text: str, settings: Settings) -> int:
+    """sendMessage with HTML parse mode. Returns the message id."""
+    payload = {
+        "chat_id": settings.telegram_chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "link_preview_options": {"is_disabled": True},
+    }
+    return call("sendMessage", payload, settings)["message_id"]
 
 
 def send_summary(summary: Summary, content: EmailContent, settings: Settings) -> int:
-    return send_message(format_message(summary, content), settings)
+    return send_message(format_message(summary, content, settings), settings)
 
 
 def send_original(content: EmailContent, settings: Settings) -> int:
-    return send_message(format_original(content), settings)
+    return send_message(format_original(content, settings), settings)
 
 
 def send_error(subject: str, error: str, settings: Settings) -> None:

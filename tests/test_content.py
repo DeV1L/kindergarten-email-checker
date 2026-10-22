@@ -1,12 +1,12 @@
 from helpers import blank_pdf, make_message, make_settings, text_pdf
 
 from kindergarten_email_checker.content import (
-    MIN_IMAGE_BYTES,
     extract,
     guess_media_type,
     html_to_text,
 )
 
+MIN_IMAGE_BYTES = make_settings().min_image_bytes
 LONG_TEXT = "Autorizacion para la excursion al parque del viernes. " * 6
 PHOTO = b"\xff\xd8\xff" + b"0" * (MIN_IMAGE_BYTES + 10)
 
