@@ -8,8 +8,13 @@ metadata:
 spec:
   # Exactly one instance. Two instances would read the same mailbox and post every email twice.
   replicas: 1
+  # On an update, the old pod runs until the new pod is ready, so a bad deploy leaves the old one.
+  # The new pod polls only after its start check, so both pods poll only for a few seconds.
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       {{- include "checker.labels" . | nindent 6 }}
@@ -17,6 +22,9 @@ spec:
     metadata:
       labels:
         {{- include "checker.labels" . | nindent 8 }}
+      # A new value on each helm upgrade replaces the pod. The new pod pulls the tag again, also latest.
+      annotations:
+        rollme: {{ randAlphaNum 8 | quote }}
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -32,18 +40,34 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ .Values.existingSecret }}
-          {{- with .Values.env }}
           env:
-            {{- range $name, $value := . }}
+            # The probes use this port, so the chart sets it. HEALTH_PORT in the secret has no effect.
+            - name: HEALTH_PORT
+              value: {{ .Values.healthPort | quote }}
+            {{- range $name, $value := .Values.env }}
             - name: {{ $name }}
               value: {{ $value | quote }}
             {{- end }}
-          {{- end }}
           securityContext:
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             capabilities:
               drop: [ALL]
+          ports:
+            - name: health
+              containerPort: {{ .Values.healthPort }}
+          # /readyz: the start check of Telegram, Gmail and DeepSeek passed. Until then the app does not poll.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            periodSeconds: 10
+          # /livez: the process runs and answers.
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: health
+            periodSeconds: 60
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:

@@ -44,19 +44,21 @@ Module map:
 | Module | Role |
 |---|---|
 | `main.py` | Entry point and the poll loop: connect, fetch, process, move, log out |
-| `config.py` | Settings from environment variables, allowlist matching |
+| `config.py` | Settings from environment variables, with their defaults. Allowlist matching |
 | `mail.py` | IMAP connection, fetching unseen mail, moving between labels |
 | `content.py` | HTML to text, PDF text extraction, rendering scanned pages, size caps |
-| `summarize.py` | Output schema, tool definition, the model call, validation and retry |
-| `telegram.py` | Message formatting, sendMessage, error posts |
+| `summarize.py` | Output schema, tool definition, the model call, validation and retry, the balance check |
+| `telegram.py` | Message formatting, sendMessage, error posts, the start check with getChat |
+| `health.py` | HTTP server for the Kubernetes probes, in a daemon thread |
 | `prompt.md` | System prompt |
 
 ## Runtime loop
 
-1. Forever: poll the mailbox, then wait `POLL_MINUTES`. The first poll runs at start.
-2. A poll opens a new IMAP connection, creates the state labels if missing, processes everything unseen and logs out.
-3. An IMAP error ends the poll. The app closes the connection, and the next poll tries again. A failed or dropped connection (IMAP abort, socket, SSL or timeout error) gets one warning line without a traceback. Any other IMAP error gets a full traceback. The logout after a dropped connection fails too; that error is ignored. The loop never exits on its own.
-4. Socket timeouts on IMAP and HTTP calls, so a stalled connection cannot block the loop.
+1. At start: check Telegram, Gmail and DeepSeek. Telegram `getChat` checks the bot token and the group. A Gmail login checks the app password. DeepSeek `GET /user/balance` checks the API key and that the balance is above zero. This request is free. On failure: one error line, then the app stops with exit code 1. Docker or Kubernetes starts it again, with a longer delay after each failure. The app does not poll before all checks pass, because otherwise every email would fail and end in `Failed`.
+2. Forever: poll the mailbox, then wait `POLL_MINUTES`. The first poll runs after the start check.
+3. A poll opens a new IMAP connection, creates the state labels if missing, processes everything unseen and logs out.
+4. An IMAP error ends the poll. The app closes the connection, and the next poll tries again. A failed or dropped connection (IMAP abort, socket, SSL or timeout error) gets one warning line without a traceback. Any other IMAP error gets a full traceback. The logout after a dropped connection fails too; that error is ignored. The loop never exits on its own.
+5. Socket timeouts on IMAP and HTTP calls, so a stalled connection cannot block the loop.
 
 The app does not use IMAP IDLE. IDLE needs a connection that stays open. Gmail and the network close such a connection a few times each day, and each drop writes a warning line. With a new connection for each poll, a drop is rare. The cost is a delay: a new email waits up to `POLL_MINUTES` for its post.
 
@@ -111,6 +113,8 @@ stateDiagram-v2
 | PDF that cannot be read | Not sent to the model. The file name is listed in the prompt | nothing |
 | JPEG, PNG, GIF, WebP | As is. Images under 20 KB are skipped as logos and signature graphics | images |
 | Other files | Not sent to the model. The file names are listed in the prompt | nothing |
+
+The limits in this section are settings with defaults. The list is in "Settings" in [SETUP.md](SETUP.md).
 
 Caps: attachments above `MAX_ATTACHMENT_MB` are not sent to the model; the request body stays under DeepSeek's 48 MiB limit; body text is truncated at about 40,000 characters with a note.
 
@@ -179,7 +183,19 @@ IMAP errors are described in "Runtime loop".
 | Telegram error | Attempt counter +1, email stays unseen |
 | Attempts exhausted | Moved to `Failed`, error posted once |
 | Process crash | Docker or Kubernetes restarts it. Nothing is lost because the state lives in Gmail |
+| Wrong credentials or no connection at start | The app stops before the first poll. Docker or Kubernetes starts it again, with a longer delay after each failure. On Kubernetes, the pod is not ready. During an update, the old pod keeps working |
+| HTTP server of the health checks does not answer | Kubernetes restarts the container (liveness probe). Docker Compose has no health check |
 
 ## Deployment
 
 The app runs as one container from the image `ghcr.io/dev1l/kindergarten-email-checker`. CI builds the image and pushes it to ghcr.io. The host pulls the image and does not build it. There are three deployment options: local development, Docker Compose on a VPS, and Kubernetes with the Helm chart. Exactly one instance runs for each mailbox. The details are in "Start the app" in [SETUP.md](SETUP.md).
+
+Health checks on Kubernetes call a small HTTP server in the app, port 8080. The server is `http.server` from the standard library, in a daemon thread. It adds less than 1 MB of memory. The main loop stays in one thread.
+
+- `/readyz`: 200 after the start check passes, 503 before. The readiness probe uses it. The start check runs once, so the pod stays ready after it.
+- `/livez`: always 200. The liveness probe restarts the container when the process does not answer.
+- Only the readiness probe depends on Telegram, Gmail and DeepSeek. A restart does not fix an outage of these services.
+
+The workflow **Deploy** in GitHub Actions runs `helm upgrade --install` with the chart of the selected branch. The image tag is `latest`, or a tag that the owner enters. The pod template has an annotation with a random value, so each upgrade replaces the pod, and the new pod pulls the tag again. With `--wait`, the workflow fails when the pod is not ready in 5 minutes, for example with wrong credentials.
+
+The chart uses the `RollingUpdate` strategy with `maxSurge` 1 and `maxUnavailable` 0. On an update, the old pod runs until the new pod is ready. A new pod with wrong credentials stops before its first poll, so the old pod keeps working. After a successful start check, both pods poll for a short time: until the next readiness probe, at most 10 seconds, and the stop of the old pod. An email that arrives in this time can get two posts. The workflow runs only when the owner starts it.

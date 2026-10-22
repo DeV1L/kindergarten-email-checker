@@ -1,4 +1,7 @@
-"""Runtime configuration, read from environment variables. See .env.example for the full list."""
+"""Runtime configuration, read from environment variables. See .env.example for the full list.
+
+Every setting except the credentials has its default value here.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +21,7 @@ class Settings(BaseSettings):
     imap_folder_ignored: str = "Ignored"
     imap_folder_failed: str = "Failed"
     allowed_senders: str = ""
+    imap_timeout_seconds: float = 60
 
     # Model, Anthropic Messages API format served by DeepSeek
     llm_base_url: str = "https://api.deepseek.com/anthropic"
@@ -25,10 +29,24 @@ class Settings(BaseSettings):
     llm_model: str = "deepseek-flash"
     llm_effort: str = "high"
     llm_timeout_seconds: float = 120
+    llm_tool_name: str = "report_summary"
+    llm_max_tokens: int = 16_000  # thinking and the tool call together
+    llm_balance_timeout_seconds: float = 30
 
     # Telegram
     telegram_bot_token: str
     telegram_chat_id: str
+    telegram_base_url: str = "https://api.telegram.org"
+    telegram_max_message_chars: int = 4096
+    telegram_timeout_seconds: float = 30
+
+    # Content extraction
+    min_image_bytes: int = 20 * 1024  # smaller images are logos and signature graphics
+    max_pdf_pages_rendered: int = 10
+    pdf_text_min_chars_per_page: int = 200
+    pdf_render_dpi: int = 110
+    max_body_chars: int = 40_000
+    max_pdf_text_chars: int = 20_000
 
     # Loop
     poll_minutes: int = 10
@@ -36,6 +54,9 @@ class Settings(BaseSettings):
     max_retries_per_message: int = 3
     log_level: str = "INFO"
     tz: str = "America/Argentina/Buenos_Aires"
+
+    # Health checks
+    health_port: int = 8080
 
     @field_validator("imap_password")
     @classmethod

@@ -122,3 +122,31 @@ def test_other_imap_error_keeps_the_traceback(monkeypatch, caplog):
     run_poll(monkeypatch, caplog, ValueError("unexpected"))
     errors = [r for r in caplog.records if r.levelno == logging.ERROR]
     assert len(errors) == 1 and errors[0].exc_info is not None
+
+
+def test_start_check_passes_and_sets_ready(monkeypatch):
+    mailbox = ClosingMailbox()
+    monkeypatch.setattr(main.telegram, "check", lambda settings: None)
+    monkeypatch.setattr(main.mail, "connect", lambda settings: mailbox)
+    monkeypatch.setattr(main, "check_balance", lambda settings: "1.87 USD")
+    monkeypatch.setattr(main.health, "ready", False)
+    main.check_services(make_settings())
+    assert main.health.ready
+    assert mailbox.logout_called
+
+
+def test_failed_start_check_exits_with_one_error_line(monkeypatch, caplog):
+    def check(settings):
+        raise main.telegram.TelegramError("getChat failed: 401 Unauthorized")
+
+    monkeypatch.setattr(main.telegram, "check", check)
+    monkeypatch.setattr(main.health, "ready", False)
+    with caplog.at_level(logging.INFO, logger="kindergarten_email_checker"):
+        with pytest.raises(SystemExit) as exit_info:
+            main.check_services(make_settings())
+    assert exit_info.value.code == 1
+    assert not main.health.ready
+    errors = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert errors == [
+        "start check failed (TelegramError: getChat failed: 401 Unauthorized), exiting"
+    ]

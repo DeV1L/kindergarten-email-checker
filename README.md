@@ -23,7 +23,7 @@ Gmail labels are the only state: `INBOX` is the queue; `Processed`, `Ignored` an
 | `Dockerfile` | The container image |
 | `.env.example` | The template for `.env`, with every setting |
 | `docs/` | Documentation |
-| `.github/workflows/` | The CI workflow |
+| `.github/workflows/` | The CI workflow and the deploy workflow |
 | `AGENTS.md` | Rules for AI agents |
 
 ## Requirements

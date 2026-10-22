@@ -76,15 +76,29 @@ The other variables have defaults:
 |----------|---------|---------|
 | `IMAP_HOST` | `imap.gmail.com` | The IMAP server of the dedicated mailbox |
 | `IMAP_FOLDER_INBOX`, `IMAP_FOLDER_PROCESSED`, `IMAP_FOLDER_IGNORED`, `IMAP_FOLDER_FAILED` | `INBOX`, `Processed`, `Ignored`, `Failed` | The names of the labels |
+| `IMAP_TIMEOUT_SECONDS` | `60` | Timeout of one IMAP command |
 | `LLM_BASE_URL` | `https://api.deepseek.com/anthropic` | The Anthropic-compatible endpoint of DeepSeek |
 | `LLM_MODEL` | `deepseek-flash` | The model |
 | `LLM_EFFORT` | `high` | Thinking effort: `low`, `high` or `max` |
 | `LLM_TIMEOUT_SECONDS` | `120` | Timeout of one model call |
+| `LLM_TOOL_NAME` | `report_summary` | The name of the tool that returns the summary. The app puts the same name into the system prompt |
+| `LLM_MAX_TOKENS` | `16000` | Output limit of one model call, for thinking and the tool call together |
+| `LLM_BALANCE_TIMEOUT_SECONDS` | `30` | Timeout of the DeepSeek balance check at start |
+| `TELEGRAM_BASE_URL` | `https://api.telegram.org` | The Telegram Bot API server |
+| `TELEGRAM_MAX_MESSAGE_CHARS` | `4096` | Telegram's limit for one message. The app trims longer posts |
+| `TELEGRAM_TIMEOUT_SECONDS` | `30` | Timeout of one Telegram call |
+| `MIN_IMAGE_BYTES` | `20480` | Smaller images are logos and signature graphics. The app skips them |
+| `MAX_PDF_PAGES_RENDERED` | `10` | Pages of a scanned PDF that go to the model as images |
+| `PDF_TEXT_MIN_CHARS_PER_PAGE` | `200` | A PDF with fewer characters per page goes to the model as page images |
+| `PDF_RENDER_DPI` | `110` | Resolution of the page images |
+| `MAX_BODY_CHARS` | `40000` | The app trims a longer email body |
+| `MAX_PDF_TEXT_CHARS` | `20000` | The app trims a longer PDF text |
 | `POLL_MINUTES` | `10` | Minutes between two polls. A new email waits up to this time for its post |
 | `MAX_ATTACHMENT_MB` | `10` | The app does not send larger attachments to the model. The post still lists their names |
 | `MAX_RETRIES_PER_MESSAGE` | `3` | Attempts before the app moves an email to `Failed` |
 | `TZ` | `America/Argentina/Buenos_Aires` | Timezone for the dates in emails and posts |
 | `LOG_LEVEL` | `INFO` | Log level |
+| `HEALTH_PORT` | `8080` | Port of the health checks `/readyz` and `/livez`. On Kubernetes, the chart value `healthPort` sets it |
 | `IMAGE_TAG` | `latest` | The image tag. Only Docker Compose reads it |
 
 ## 6. Start the app
@@ -213,11 +227,12 @@ The Helm chart is in [charts/kindergarten-email-checker](../charts/kindergarten-
 
 | Setting | Value |
 |---------|-------|
-| Replicas | Exactly 1, with the `Recreate` strategy. Two pods never read the mailbox at the same time |
+| Replicas | Exactly 1, with the `RollingUpdate` strategy: `maxSurge` 1, `maxUnavailable` 0. On an update, the old pod runs until the new pod is ready. Read "Deployment" in [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Image | `image.repository` and `image.tag` in the chart values. The default tag is `latest`. `IMAGE_TAG` in `.env` has no effect |
-| Pull policy | `Always` |
+| Pull policy | `Always`. Each `helm upgrade` replaces the pod, so the new pod pulls the image again |
 | User | 10001, non-root |
 | Security | Read-only root filesystem, no capabilities, no privilege escalation, no service account token |
+| Health checks | A readiness probe on `/readyz` and a liveness probe on `/livez`, port 8080. Read "Health checks" in the [operations guide](OPERATIONS.md) |
 | Resources | Memory request and limit 128 MiB, CPU request 50m |
 | Settings | All variables come from an existing secret, `existingSecret` in the chart values, default `kindergarten-email-checker`. The chart does not create or hold secrets. `env` in the chart values overrides single variables |
 
@@ -249,3 +264,12 @@ helm upgrade --install kindergarten-email-checker charts/kindergarten-email-chec
 ```
 
 6. Check the logs. Read "Follow the logs" in the [operations guide](OPERATIONS.md).
+
+#### Deploy from GitHub
+
+The workflow **Deploy** installs or updates the chart from GitHub Actions. It reads a kubeconfig from the GitHub secret `KUBECONFIG`. GitHub runners must reach the API server in the kubeconfig from the internet.
+
+1. In the repository on GitHub, click **Settings**, **Secrets and variables**, **Actions**.
+2. Click **New repository secret**. Enter the name `KUBECONFIG`. Paste the content of the kubeconfig. Click **Add secret**.
+
+To deploy, read "Update the app" in the [operations guide](OPERATIONS.md).

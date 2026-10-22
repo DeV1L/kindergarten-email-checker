@@ -3,10 +3,14 @@ import logging
 from datetime import date
 from types import SimpleNamespace
 
+import pytest
 from helpers import make_message, make_settings
 
+from kindergarten_email_checker import summarize as summarize_module
 from kindergarten_email_checker.content import extract
-from kindergarten_email_checker.summarize import TOOL_NAME, Summary, summarize, tool_definition
+from kindergarten_email_checker.summarize import Summary, summarize, tool_definition
+
+TOOL_NAME = make_settings().llm_tool_name
 
 VALID = {
     "title_ru": "Экскурсия в парк",
@@ -20,12 +24,12 @@ VALID = {
 }
 
 
-def tool_response(tool_input):
+def tool_response(tool_input, name=TOOL_NAME):
     return SimpleNamespace(
         stop_reason="tool_use",
         content=[
             SimpleNamespace(type="thinking", thinking=""),
-            SimpleNamespace(type="tool_use", name=TOOL_NAME, id="toolu_1", input=tool_input),
+            SimpleNamespace(type="tool_use", name=name, id="toolu_1", input=tool_input),
         ],
     )
 
@@ -112,6 +116,63 @@ def test_text_null_needs_no_retry():
 
 
 def test_tool_schema_matches_summary_model():
-    schema = tool_definition()["input_schema"]
+    schema = tool_definition(make_settings())["input_schema"]
     assert set(schema["required"]) == {"title_ru", "summary_ru", "urgency", "category"}
     assert Summary.model_validate(VALID).event_time == "10:00"
+
+
+class FakeResponse:
+    def __init__(self, status_code, data):
+        self.status_code = status_code
+        self.data = data
+
+    def json(self):
+        return self.data
+
+
+def balance_answer(monkeypatch, status_code, data):
+    calls = []
+
+    def get(url, headers, timeout):
+        calls.append(str(url))
+        return FakeResponse(status_code, data)
+
+    monkeypatch.setattr(summarize_module.httpx, "get", get)
+    return calls
+
+
+def balance(total):
+    info = {
+        "currency": "USD",
+        "total_balance": total,
+        "granted_balance": "0",
+        "topped_up_balance": total,
+    }
+    return {"is_available": total != "0.00", "balance_infos": [info]}
+
+
+def test_check_balance_returns_the_balance(monkeypatch):
+    calls = balance_answer(monkeypatch, 200, balance("1.87"))
+    assert summarize_module.check_balance(make_settings()) == "1.87 USD"
+    assert calls == ["https://api.deepseek.com/user/balance"]
+
+
+def test_check_balance_fails_on_zero(monkeypatch):
+    balance_answer(monkeypatch, 200, balance("0.00"))
+    with pytest.raises(summarize_module.BalanceError, match="balance is zero"):
+        summarize_module.check_balance(make_settings())
+
+
+def test_check_balance_fails_on_a_wrong_key(monkeypatch):
+    error = {"error": {"message": "Authentication Fails", "type": "authentication_error"}}
+    balance_answer(monkeypatch, 401, error)
+    with pytest.raises(summarize_module.BalanceError, match="401 Authentication Fails"):
+        summarize_module.check_balance(make_settings())
+
+
+def test_system_prompt_names_the_tool():
+    client = FakeClient(tool_response(VALID, name="report_summary_v2"))
+    summarize(content(), make_settings(llm_tool_name="report_summary_v2"), client)
+    system = client.calls[0]["system"]
+    assert "`report_summary_v2`" in system
+    assert "{TOOL_NAME}" not in system

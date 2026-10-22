@@ -1,6 +1,7 @@
 """Process entry point and the main loop (docs/ARCHITECTURE.md, sections 4 and 5).
 
-Every POLL_MINUTES: connect, process every unseen email, log out.
+At start: check Telegram, Gmail and DeepSeek. Stop when one of them fails.
+Then every POLL_MINUTES: connect, process every unseen email, log out.
 An IMAP error ends the poll. The next poll tries again.
 """
 
@@ -13,10 +14,10 @@ import time
 
 from imap_tools import MailBox, MailMessage
 
-from kindergarten_email_checker import __version__, mail, telegram
+from kindergarten_email_checker import __version__, health, mail, telegram
 from kindergarten_email_checker.config import Settings
 from kindergarten_email_checker.content import extract
-from kindergarten_email_checker.summarize import summarize
+from kindergarten_email_checker.summarize import check_balance, summarize
 
 log = logging.getLogger("kindergarten_email_checker")
 
@@ -44,8 +45,28 @@ def run() -> int:
         settings.llm_model,
         settings.poll_minutes,
     )
+    health.start(settings.health_port)
+    check_services(settings)
     loop(settings)
     return 0
+
+
+def check_services(settings: Settings) -> None:
+    """Exit when Telegram, Gmail or DeepSeek fails: wrong credentials, no connection, no balance.
+
+    The app must not poll then: every email would fail and end in Failed.
+    Docker or Kubernetes restarts the container, with a growing delay. Until the check passes,
+    /readyz answers 503.
+    """
+    try:
+        telegram.check(settings)
+        mail.close(mail.connect(settings))
+        balance = check_balance(settings)
+    except Exception as error:
+        log.error("start check failed (%s: %s), exiting", type(error).__name__, error)
+        raise SystemExit(1) from None
+    health.ready = True
+    log.info("start check passed: Telegram, Gmail and DeepSeek, DeepSeek balance %s", balance)
 
 
 def loop(settings: Settings) -> None:

@@ -10,6 +10,9 @@ existingSecret: kindergarten-email-checker
 env: {}
 #  LOG_LEVEL: DEBUG
 
+# Port of the health checks /readyz and /livez. The chart passes it to the app as HEALTH_PORT.
+healthPort: 8080
+
 resources:
   requests:
     cpu: 50m
