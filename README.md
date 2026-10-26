@@ -6,7 +6,7 @@ The app reads the emails that a kindergarten sends in Spanish. Writes a short su
 
 1. A forwarding filter in the personal mailbox forwards the emails from the kindergarten addresses to the dedicated mailbox.
 2. Every 10 minutes (`POLL_MINUTES`), the app connects to the dedicated mailbox, gets the new emails and disconnects.
-3. The app checks each unseen email against the sender allowlist and converts it to text. It sends the text to DeepSeek (`deepseek-flash`, thinking on) through the Anthropic-compatible API. PDFs and images go along as text or page images.
+3. The app checks each unseen email against the sender allowlist and converts it to text. It sends the text to DeepSeek (`deepseek-flash`) through the Anthropic-compatible API. PDFs and images go along as text or page images.
 4. The model returns a structured summary: Russian title and summary, urgency, category, action, deadline, event date.
 5. The app posts the summary to the group in Telegram. When the email has attachments, the post lists their names. Then the app moves the email to the `Processed` label.
 
@@ -48,4 +48,4 @@ The full procedure, with every command, is in [docs/SETUP.md](docs/SETUP.md). Th
 - [Architecture](docs/ARCHITECTURE.md)
 - [Setup guide](docs/SETUP.md)
 - [Operations guide](docs/OPERATIONS.md)
-- [Code walkthrough](docs/code/README.md): every module, the data flow and the exit codes
+- [Code walkthrough](docs/code/README.md)
