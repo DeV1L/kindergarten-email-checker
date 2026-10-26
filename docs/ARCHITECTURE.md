@@ -126,7 +126,7 @@ Caps: attachments above `MAX_ATTACHMENT_MB` are not sent to the model; body text
 - Model: `deepseek-flash` (DeepSeek-V4.1-Flash). Cheapest, accepts images, recommended by DeepSeek. `deepseek-v4-pro` is text-only.
 - Thinking: enabled. The request carries `thinking={"type": "enabled", "budget_tokens": 8000}`; DeepSeek ignores `budget_tokens` and reads the effort from `output_config={"effort": LLM_EFFORT}`. The app reads only the tool call from the response. On a retry, the full previous response, thinking blocks included, goes back to the model.
 - Output shaping: one tool, `report_summary`, whose `input_schema` is `Summary.model_json_schema()`. The request uses `tool_choice={"type": "auto"}`, and the system prompt tells the model to call the tool exactly once. DeepSeek rejects a forced tool choice when thinking is on (tested 2026-10-05: "Thinking mode does not support this tool_choice"). DeepSeek's Anthropic format has no structured-output mode and no JSON mode, so the tool call carries the schema.
-- Validation: `Summary.model_validate(tool_use.input)`. For `action_ru`, `deadline`, `event_date` and `event_time`, the text values "null", "none" and an empty string count as no value. The model sometimes writes the text "null" instead of JSON null. When the model writes tool arguments that are not valid JSON, DeepSeek does not report an error: it returns the tool call with empty input `{}`, which fails validation. On a validation error: one retry with a `tool_result` block that carries the error. On a missing tool call: one retry with the message "Call the report_summary tool." After two failures: subject, sender and original text go to Telegram without a summary, and the email is still moved to `Processed`.
+- Validation: `Summary.model_validate(tool_use.input)`. For `action_ru`, `deadline`, `event_date` and `event_time`, the text values "null", "none" and an empty string count as no value. The model sometimes writes the text "null" instead of JSON null. When the model writes tool arguments that are not valid JSON, DeepSeek does not report an error: it returns the tool call with empty input `{}`, which fails validation. On a validation error: a retry with a `tool_result` block that carries the error. On a missing tool call: a retry with the message "Call the report_summary tool." The app calls the model at most `LLM_MODEL_TRIES` times, default 2. After the last failure: subject, sender and original text go to Telegram without a summary, and the email is still moved to `Processed`.
 - API errors: the SDK retries timeouts, 429 and 5xx twice. After that the error goes to the main loop, which counts an attempt (read "Failure handling").
 - Inputs: the system prompt from `prompt.md`; a user message with a metadata block (From, Subject, sent date in the `TZ` timezone, today's date), the body text, the PDF texts, the list of files not sent to the model, and the image blocks.
 - `max_tokens`: 16,000, for thinking and the tool call together. The test call used about 830 output tokens.
@@ -172,7 +172,7 @@ Rules:
 - Footer: subject, sender and the date the email was sent, with the year and time, in the `TZ` timezone. For a manual forward, this is the date of the forward.
 - Fallback post when the model output is unusable: `⚠️ Без сводки`, the attachment names and the original text in an expandable quote. This is the only post that quotes the email, because it has no summary. Telegram's limit is 4096 characters, so the original is trimmed to fit and ends with `…`.
 - Log hygiene: Telegram URLs contain the bot token. The app sets the `httpx` and `httpx2` loggers to WARNING and builds Telegram error messages without the URL. The Anthropic SDK uses `httpx2`.
-- Error post: `⚠️ Не удалось обработать письмо «subject»: error`, at most once per email.
+- Error post: `⚠️ Не удалось обработать письмо «subject»: error`, at most once per email. The error text is trimmed at `TELEGRAM_MAX_ERROR_CHARS` characters, default 500.
 
 ## Failure handling
 
@@ -181,7 +181,7 @@ IMAP errors are described in "Runtime loop".
 | Failure | Behaviour |
 |---|---|
 | Model timeout, 5xx, 429 | Attempt counter +1, email stays unseen, retried in the next poll |
-| Model output invalid twice in one attempt | Original text forwarded, email `Processed` |
+| Model output invalid `LLM_MODEL_TRIES` times in one attempt | Original text forwarded, email `Processed` |
 | Telegram error | Attempt counter +1, email stays unseen |
 | Attempts exhausted | Moved to `Failed`, error posted once |
 | Process crash | Docker or Kubernetes restarts it. Nothing is lost because the state lives in Gmail |

@@ -132,5 +132,6 @@ def send_original(content: EmailContent, settings: Settings) -> int:
 
 def send_error(subject: str, error: str, settings: Settings) -> None:
     """Post a processing error to the group."""
-    text = f"⚠️ Не удалось обработать письмо «{escape(subject)}»: {escape(error[:500])}"
+    error = error[: settings.telegram_max_error_chars]
+    text = f"⚠️ Не удалось обработать письмо «{escape(subject)}»: {escape(error)}"
     send_message(text, settings)

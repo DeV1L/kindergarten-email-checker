@@ -110,7 +110,7 @@ flowchart TD
 Details:
 
 - The allowlist check comes first and is outside the `try` block. An ignored email gets no post. An IMAP error in this move goes to `poll()`.
-- `summarize()` returns `None` after two invalid model answers. This is not an error: the app posts the original text and moves the email to `Processed`.
+- `summarize()` returns `None` after `LLM_MODEL_TRIES` unusable model answers. This is not an error: the app posts the original text and moves the email to `Processed`.
 - The `try` block catches `Exception`. On an error, the email stays unseen, and the next poll tries it again.
 - When the counter reaches `MAX_RETRIES_PER_MESSAGE`, the app posts the error to the group with `telegram.send_error()`. When this post fails too, the app writes the error to the log and still moves the email to `Failed`.
 - The move to `Processed` comes after the post. This move is the commit.
@@ -124,7 +124,7 @@ Details:
 | `POLL_MINUTES` | Setting, default 10 | Pause after each poll |
 | `MAX_RETRIES_PER_MESSAGE` | Setting, default 3 | Failed attempts before the label `Failed` |
 | `LOG_LEVEL` | Setting, default `INFO` | Level of the root logger. `DEBUG` shows each poll |
-| `httpx`, `httpx2` logger level | `WARNING`, fixed | Keeps the bot token out of the log |
+| `httpx`, `httpx2` logger level | `WARNING`, code only | Keeps the bot token out of the log |
 
 ## Errors and exit codes
 

@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 120
     llm_tool_name: str = "report_summary"
     llm_max_tokens: int = 16_000  # thinking and the tool call together
+    llm_model_tries: int = 2  # model calls for one email when the answer is unusable
     llm_balance_timeout_seconds: float = 30
 
     # Telegram
@@ -38,6 +39,7 @@ class Settings(BaseSettings):
     telegram_chat_id: str
     telegram_base_url: str = "https://api.telegram.org"
     telegram_max_message_chars: int = 4096
+    telegram_max_error_chars: int = 500  # error text in an error post
     telegram_timeout_seconds: float = 30
 
     # Content extraction

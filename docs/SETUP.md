@@ -83,9 +83,11 @@ The other variables have defaults:
 | `LLM_TIMEOUT_SECONDS` | `120` | Timeout of one model call |
 | `LLM_TOOL_NAME` | `report_summary` | The name of the tool that returns the summary. The app puts the same name into the system prompt |
 | `LLM_MAX_TOKENS` | `16000` | Output limit of one model call, for thinking and the tool call together |
+| `LLM_MODEL_TRIES` | `2` | Model calls for one email. The app calls the model again only when the answer is unusable |
 | `LLM_BALANCE_TIMEOUT_SECONDS` | `30` | Timeout of the DeepSeek balance check at start |
 | `TELEGRAM_BASE_URL` | `https://api.telegram.org` | The Telegram Bot API server |
 | `TELEGRAM_MAX_MESSAGE_CHARS` | `4096` | Telegram's limit for one message. The app trims longer posts |
+| `TELEGRAM_MAX_ERROR_CHARS` | `500` | Length of the error text in an error post. The app trims a longer error text. The log holds the full error |
 | `TELEGRAM_TIMEOUT_SECONDS` | `30` | Timeout of one Telegram call |
 | `MIN_IMAGE_BYTES` | `20480` | Smaller images are logos and signature graphics. The app skips them |
 | `MAX_PDF_PAGES_RENDERED` | `10` | Pages of a scanned PDF that go to the model as images |

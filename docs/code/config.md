@@ -75,6 +75,7 @@ Model:
 | `llm_timeout_seconds` | 120 | Timeout of one model request |
 | `llm_tool_name` | `report_summary` | Name of the tool that returns the summary. Also replaces `{TOOL_NAME}` in `prompt.md` |
 | `llm_max_tokens` | 16,000 | Output limit for thinking and the tool call together |
+| `llm_model_tries` | 2 | Model calls for one email when the answer is unusable. Read "Model try" in [README.md](README.md#model-try) |
 | `llm_balance_timeout_seconds` | 30 | Timeout of the balance check at start |
 
 Telegram:
@@ -85,6 +86,7 @@ Telegram:
 | `telegram_chat_id` | Required | Id of the group, a negative number. The app sends it to the Bot API as it is |
 | `telegram_base_url` | `https://api.telegram.org` | Bot API server |
 | `telegram_max_message_chars` | 4096 | Telegram's limit for one message |
+| `telegram_max_error_chars` | 500 | Length of the error text in an error post |
 | `telegram_timeout_seconds` | 30 | Timeout of one Bot API request |
 
 Content extraction:

@@ -115,7 +115,7 @@ The average decides for the whole file. A PDF with some text pages and some scan
 | `MAX_PDF_PAGES_RENDERED` | Setting, 10 | Further pages of a scan are dropped without a note |
 | `PDF_RENDER_DPI` | Setting, 110 | Resolution of rendered pages |
 | `TZ` | Setting | Timezone of `sent_at` |
-| `(без темы)`, `без имени`, `[текст обрезан]` | Fixed text | Subject placeholder, file name placeholder, cut note |
+| `(без темы)`, `без имени`, `[текст обрезан]` | Text, code only | Subject placeholder, file name placeholder, cut note |
 
 There is no limit on the number of images or on their total size. Each file is checked against `MAX_ATTACHMENT_MB` alone. Many large photos in one email can make the request larger than the DeepSeek limit of 48 MiB. The model call then fails, and the email follows the normal retry path.
 

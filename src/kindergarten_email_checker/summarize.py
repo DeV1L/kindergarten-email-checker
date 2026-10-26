@@ -109,14 +109,14 @@ def make_client(settings: Settings) -> anthropic.Anthropic:
 def summarize(
     content: EmailContent, settings: Settings, client: anthropic.Anthropic | None = None
 ) -> Summary | None:
-    """Ask the model for a Summary. One retry on invalid output. None after two invalid outputs.
+    """Ask the model for a Summary, up to LLM_MODEL_TRIES times. None when no answer is usable.
 
     API errors (timeout, 5xx, 429 after the SDK's own retries) are raised to the caller.
     """
     client = client or make_client(settings)
     tool_name = settings.llm_tool_name
     messages: list[dict] = [{"role": "user", "content": user_content(content, settings)}]
-    for attempt in (1, 2):
+    for attempt in range(1, settings.llm_model_tries + 1):
         response = client.messages.create(
             model=settings.llm_model,
             max_tokens=settings.llm_max_tokens,

@@ -100,6 +100,12 @@ def test_two_bad_answers_return_none():
     assert len(client.calls) == 2
 
 
+def test_model_tries_come_from_the_settings():
+    client = FakeClient(text_response(), text_response(), tool_response(VALID))
+    assert summarize(content(), make_settings(llm_model_tries=3), client).urgency == "high"
+    assert len(client.calls) == 3
+
+
 def test_text_null_means_no_value():
     summary = Summary.model_validate(
         {**VALID, "action_ru": "null", "deadline": "None", "event_date": " ", "event_time": ""}

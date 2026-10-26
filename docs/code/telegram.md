@@ -114,7 +114,7 @@ Every post is sent the same way, with a normal notification. The app does not se
 
 `send_summary()` and `send_original()` call the matching format function and `send_message()`. They return the message id for the log line.
 
-`send_error(subject, error, settings)` posts `⚠️ Не удалось обработать письмо «subject»: error` (could not process the email). The error text is cut at 500 characters.
+`send_error(subject, error, settings)` posts `⚠️ Не удалось обработать письмо «subject»: error` (could not process the email). The error text is cut at `TELEGRAM_MAX_ERROR_CHARS` characters. `main.process()` writes the full error with its traceback to the log before the post.
 
 ## Constants, limits and flags
 
@@ -127,7 +127,7 @@ Every post is sent the same way, with a normal notification. The app does not se
 | `TELEGRAM_MAX_MESSAGE_CHARS` | Setting, 4096 | Length limit of a post |
 | `TELEGRAM_TIMEOUT_SECONDS` | Setting, 30 | Timeout of one request |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_BASE_URL` | Settings | Bot API access |
-| Error text length | 500, fixed | In `send_error()` |
+| `TELEGRAM_MAX_ERROR_CHARS` | Setting, 500 | Length of the error text in `send_error()` |
 
 ## Errors and exit codes
 

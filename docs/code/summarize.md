@@ -81,11 +81,11 @@ Sends `GET /user/balance` to DeepSeek. The request is free.
 
 ### `make_client(settings) -> anthropic.Anthropic`
 
-Creates the `anthropic` SDK client with `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_TIMEOUT_SECONDS`. The SDK keeps its default of 2 retries for a timeout, 429 or 5xx. `summarize()` creates a new client for each email. Tests pass a fake client instead.
+Creates the `anthropic` SDK client with `LLM_BASE_URL`, `LLM_API_KEY` and `LLM_TIMEOUT_SECONDS`. The SDK repeats a request after a timeout, 429 or 5xx. Read "HTTP try" in [README.md](README.md#http-try). `summarize()` creates a new client for each email. Tests pass a fake client instead.
 
 ### `summarize(content, settings, client=None) -> Summary | None`
 
-Asks the model for a `Summary`. It makes at most two model calls.
+Asks the model for a `Summary`. It makes at most `LLM_MODEL_TRIES` model calls, default 2.
 
 ```mermaid
 flowchart TD
@@ -97,7 +97,7 @@ flowchart TD
     V -->|ValidationError| R2["problem: invalid input<br/>retry turn: tool_result, is_error, the errors"]
     R1 --> L["log one WARNING line with a JSON object"]
     R2 --> L
-    L --> Q{"Attempt 1?"}
+    L --> Q{"Calls below<br/>LLM_MODEL_TRIES?"}
     Q -->|yes| AP["messages += assistant turn + retry turn"] --> B
     Q -->|no| NONE["return None"]
 ```
@@ -109,13 +109,13 @@ Request parameters:
 | `model` | `LLM_MODEL` | `deepseek-flash` accepts images |
 | `max_tokens` | `LLM_MAX_TOKENS` | Thinking and the tool call share this limit |
 | `system` | `SYSTEM_PROMPT` with `{TOOL_NAME}` replaced | The prompt and the tool definition use the same name |
-| `messages` | The user turn. On the second call also the first answer and the retry turn | The model sees its own mistake |
+| `messages` | The user turn. On each further call also the earlier answers and retry turns | The model sees its own mistakes |
 | `tools` | `[tool_definition()]` | One tool |
 | `tool_choice` | `{"type": "auto"}` | DeepSeek rejects a forced tool choice when thinking is on. The prompt asks for the call |
 | `thinking` | `{"type": "enabled", "budget_tokens": 8000}` | Thinking stays on. DeepSeek ignores the budget |
 | `output_config` | `{"effort": LLM_EFFORT}` | DeepSeek reads the thinking effort from here |
 
-On a retry, the full first answer goes back as the assistant turn, with the thinking blocks. The retry turn depends on the problem:
+On a retry, the full previous answer goes back as the assistant turn, with the thinking blocks. The retry turn depends on the problem:
 
 | Problem | Retry turn |
 |---------|------------|
@@ -126,7 +126,7 @@ When DeepSeek gets tool arguments that are not valid JSON, it returns the tool c
 
 Each problem gives one log line: `uid=<uid> attempt <n>: <JSON object>`. The object holds the problem, and for invalid input also the input and the errors. `ensure_ascii=False` keeps the Russian text readable.
 
-After two problems, the function returns `None`. `main.process()` then posts the original text. API errors are not caught: they go to `main.process()`, which counts a failed attempt.
+After `LLM_MODEL_TRIES` problems, the function returns `None`. `main.process()` then posts the original text. API errors are not caught: they go to `main.process()`, which counts a failed attempt.
 
 ### `user_content(content, settings) -> list[dict]`
 
@@ -176,8 +176,8 @@ The system prompt, in English. It tells the model:
 | `Urgency` | `low`, `medium`, `high` | Allowed urgency values |
 | `Category` | 7 values | Allowed category values. `telegram.CATEGORY_LABEL` must have a label for each |
 | `NO_VALUE` | `""`, `"null"`, `"none"` | Texts that count as no value, case-insensitive |
-| Model calls in one attempt | 2, fixed | `for attempt in (1, 2)` |
-| `budget_tokens` | 8000, fixed | Required in the Anthropic format. DeepSeek ignores it |
+| `LLM_MODEL_TRIES` | Setting, default 2 | Model calls in one attempt. Read "Retries" in [README.md](README.md#retries) |
+| `budget_tokens` | 8000, code only | Required in the Anthropic format. DeepSeek ignores it |
 | `LLM_MODEL`, `LLM_EFFORT`, `LLM_MAX_TOKENS`, `LLM_TOOL_NAME` | Settings | Request parameters |
 | `LLM_TIMEOUT_SECONDS`, `LLM_BALANCE_TIMEOUT_SECONDS` | Settings | Timeouts |
 
@@ -186,7 +186,7 @@ The system prompt, in English. It tells the model:
 | Situation | Result |
 |-----------|--------|
 | `check_balance()`: wrong key, zero balance, no connection | Exception to `main.check_services()`. Exit code 1 |
-| `summarize()`: two invalid answers | Returns `None`. Not an error |
+| `summarize()`: `LLM_MODEL_TRIES` unusable answers | Returns `None`. Not an error |
 | `summarize()`: timeout, 429, 5xx after the SDK retries, 4xx | Exception to `main.process()`. One failed attempt |
 
 ## Tests
@@ -197,6 +197,7 @@ The system prompt, in English. It tells the model:
 - invalid input is retried with a `tool_result` error block;
 - invalid input is logged as one line of JSON;
 - two bad answers return `None`;
+- the number of model calls comes from `LLM_MODEL_TRIES`;
 - the text "null" means no value and needs no retry;
 - the tool schema matches the `Summary` model;
 - the balance check: a balance above zero, a zero balance, a wrong key;
