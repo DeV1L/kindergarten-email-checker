@@ -1,4 +1,4 @@
-"""Telegram Bot API client (docs/ARCHITECTURE.md, section 9)."""
+"""Telegram Bot API client."""
 
 from __future__ import annotations
 

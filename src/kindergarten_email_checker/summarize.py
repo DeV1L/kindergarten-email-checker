@@ -1,4 +1,4 @@
-"""The model call (docs/ARCHITECTURE.md, section 8).
+"""The model call.
 
 One Anthropic Messages API request to DeepSeek with thinking enabled. The summary comes back
 as the input of a `report_summary` tool call and is validated against `Summary`.

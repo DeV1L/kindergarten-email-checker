@@ -48,3 +48,4 @@ The full procedure, with every command, is in [docs/SETUP.md](docs/SETUP.md). Th
 - [Architecture](docs/ARCHITECTURE.md)
 - [Setup guide](docs/SETUP.md)
 - [Operations guide](docs/OPERATIONS.md)
+- [Code walkthrough](docs/code/README.md): every module, the data flow and the exit codes

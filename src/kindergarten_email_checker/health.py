@@ -1,4 +1,4 @@
-"""HTTP endpoints for the Kubernetes probes (docs/ARCHITECTURE.md, "Deployment").
+"""HTTP endpoints for the Kubernetes probes.
 
 GET /readyz answers 200 after the start check of Telegram, Gmail and DeepSeek.
 GET /livez answers 200 while the process runs.

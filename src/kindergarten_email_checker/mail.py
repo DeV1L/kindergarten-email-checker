@@ -1,4 +1,4 @@
-"""IMAP access to the dedicated mailbox (docs/ARCHITECTURE.md, sections 4 and 6).
+"""IMAP access to the dedicated mailbox.
 
 The mailbox is the only state: unseen mail in the inbox label is the queue, and moving a
 message to Processed, Ignored or Failed is the commit. Fetching does not set the Seen flag.

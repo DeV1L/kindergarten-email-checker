@@ -52,6 +52,8 @@ Module map:
 | `health.py` | HTTP server for the Kubernetes probes, in a daemon thread |
 | `prompt.md` | System prompt |
 
+The [code walkthrough](code/README.md) describes each module in detail: its functions, constants, limits and errors.
+
 ## Runtime loop
 
 1. At start: check Telegram, Gmail and DeepSeek. Telegram `getChat` checks the bot token and the group. A Gmail login checks the app password. DeepSeek `GET /user/balance` checks the API key and that the balance is above zero. This request is free. On failure: one error line, then the app stops with exit code 1. Docker or Kubernetes starts it again, with a longer delay after each failure. The app does not poll before all checks pass, because otherwise every email would fail and end in `Failed`.
@@ -116,7 +118,7 @@ stateDiagram-v2
 
 The limits in this section are settings with defaults. The list is in "Settings" in [SETUP.md](SETUP.md).
 
-Caps: attachments above `MAX_ATTACHMENT_MB` are not sent to the model; the request body stays under DeepSeek's 48 MiB limit; body text is truncated at about 40,000 characters with a note.
+Caps: attachments above `MAX_ATTACHMENT_MB` are not sent to the model; body text is truncated at about 40,000 characters with a note. There is no cap on the total size of the images. Many large photos in one email can exceed DeepSeek's 48 MiB request limit. The model call then fails, and the email follows the normal retry path.
 
 ## The model call
 

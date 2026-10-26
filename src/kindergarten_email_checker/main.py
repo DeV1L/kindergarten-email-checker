@@ -1,4 +1,4 @@
-"""Process entry point and the main loop (docs/ARCHITECTURE.md, sections 4 and 5).
+"""Process entry point and the main loop.
 
 At start: check Telegram, Gmail and DeepSeek. Stop when one of them fails.
 Then every POLL_MINUTES: connect, process every unseen email, log out.
@@ -35,7 +35,7 @@ def run() -> int:
         stream=sys.stdout,
     )
     # httpx (Telegram) and httpx2 (Anthropic SDK) log every request URL at INFO.
-    # Telegram URLs contain the bot token, and the tool logs one line per email.
+    # Telegram URLs contain the bot token, and the app logs one line per email.
     for name in ("httpx", "httpx2"):
         logging.getLogger(name).setLevel(logging.WARNING)
     log.info(
