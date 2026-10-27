@@ -65,7 +65,7 @@ The check runs only once. The app does not poll before the check passes: with wr
 
 Creates the attempt counter `attempts: dict[str, int]`, then repeats forever: `poll()`, then `time.sleep(POLL_MINUTES * 60)`. The first poll runs at once after the start check. The pause counts from the end of a poll, so the real interval is `POLL_MINUTES` plus the duration of the poll.
 
-The counter maps an email UID to the number of failed attempts. It lives in memory. A restart clears it, so an email can get up to `MAX_RETRIES_PER_MESSAGE` new attempts after each restart.
+The counter maps an email UID to the number of failed attempts. It lets the app stop retrying an email that always fails. A failed email stays unseen in the inbox label, so without the counter each poll would try it again forever. The counter lives in memory, because the labels are the only state. A restart clears it, so an email can get up to `MAX_RETRIES_PER_MESSAGE` new attempts after each restart.
 
 ### `poll(settings, attempts)`
 
