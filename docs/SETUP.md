@@ -234,7 +234,7 @@ The Helm chart is in [charts/kindergarten-email-checker](../charts/kindergarten-
 | Pull policy | `Always`. Each `helm upgrade` replaces the pod, so the new pod pulls the image again |
 | User | 10001, non-root |
 | Security | Read-only root filesystem, no capabilities, no privilege escalation, no service account token |
-| Health checks | A readiness probe on `/readyz` and a liveness probe on `/livez`, port 8080. Read "Health checks" in the [operations guide](OPERATIONS.md) |
+| Health checks | A readiness probe on `/readyz` and a liveness probe on `/livez`, port 8080. The chart values `readinessPeriodSeconds` (default 10) and `livenessPeriodSeconds` (default 60) set how often they run. Read "Health checks" in the [operations guide](OPERATIONS.md) |
 | Resources | Memory request and limit 128 MiB, CPU request 50m |
 | Settings | All variables come from an existing secret, `existingSecret` in the chart values, default `kindergarten-email-checker`. The chart does not create or hold secrets. `env` in the chart values overrides single variables |
 

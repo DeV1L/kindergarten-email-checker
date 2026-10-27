@@ -94,13 +94,12 @@ Solid arrows are the normal path. Dotted arrows are extra data and exceptions.
 | Module | Role | Walkthrough |
 |--------|------|-------------|
 | `__init__.py`, `__main__.py` | The package version and the `python -m` entry point | [package.md](package.md) |
-| `main.py` | Start, start check, poll loop, processing of one email | [main.md](main.md) |
+| `main.py` | Start, start check, poll loop, processing of one email, HTTP server for the Kubernetes probes | [main.md](main.md) |
 | `config.py` | Settings from environment variables. Allowlist matching | [config.md](config.md) |
 | `mail.py` | IMAP connection, fetch, move between labels | [mail.md](mail.md) |
 | `content.py` | One email to text and images for the model | [content.md](content.md) |
 | `summarize.py`, `prompt.md` | The model call, the output schema, the balance check, the system prompt | [summarize.md](summarize.md) |
 | `telegram.py` | Post formatting and the Bot API calls | [telegram.md](telegram.md) |
-| `health.py` | HTTP server for the Kubernetes probes | [health.md](health.md) |
 
 Import dependencies. An arrow points from the module that imports to the module that it imports:
 
@@ -112,7 +111,6 @@ flowchart LR
     main --> content
     main --> summarize
     main --> telegram
-    main --> health
     mail --> config
     content --> config
     summarize --> config
@@ -122,7 +120,7 @@ flowchart LR
     telegram --> summarize
 ```
 
-`config` imports no module of the app. `health` imports no module of the app. `main` is the only module that calls `mail` and `health`.
+`config` imports no module of the app. `main` is the only module that calls `mail`.
 
 ## Process lifecycle
 
@@ -134,12 +132,12 @@ sequenceDiagram
     participant G as Gmail IMAP
     participant D as DeepSeek
     R->>R: Settings(), logging setup
-    R->>H: health.start(HEALTH_PORT)
+    R->>H: start_health()
     Note over H: /readyz answers 503
     R->>T: getChat
     R->>G: login, create labels, logout
     R->>D: GET /user/balance
-    R->>H: health.ready = True
+    R->>H: ready = True
     Note over H: /readyz answers 200
     loop every POLL_MINUTES
         R->>G: connect, fetch unseen

@@ -31,7 +31,7 @@ On Kubernetes, two probes call an HTTP server in the app, port 8080:
 | Probe | Path | What it does |
 |-------|------|--------------|
 | Readiness | `/readyz` | The pod is ready after the start check passes. With wrong credentials, the pod stays not ready |
-| Liveness | `/livez` | Kubernetes restarts the container when the app does not answer |
+| Liveness | `/livez` | Kubernetes restarts the container when the app does not answer. The probe runs every `livenessPeriodSeconds` seconds, a chart value, default 60 |
 
 Show the pod. The column `READY` shows `1/1` after the start check. The column `RESTARTS` counts the restarts:
 

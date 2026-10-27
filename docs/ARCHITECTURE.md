@@ -43,13 +43,12 @@ Module map:
 
 | Module | Role |
 |---|---|
-| `main.py` | Entry point and the poll loop: connect, fetch, process, move, log out |
+| `main.py` | Entry point and the poll loop: connect, fetch, process, move, log out. The HTTP server for the Kubernetes probes, in a daemon thread |
 | `config.py` | Settings from environment variables, with their defaults. Allowlist matching |
 | `mail.py` | IMAP connection, fetching unseen mail, moving between labels |
 | `content.py` | HTML to text, PDF text extraction, rendering scanned pages, size caps |
 | `summarize.py` | Output schema, tool definition, the model call, validation and retry, the balance check |
 | `telegram.py` | Message formatting, sendMessage, error posts, the start check with getChat |
-| `health.py` | HTTP server for the Kubernetes probes, in a daemon thread |
 | `prompt.md` | System prompt |
 
 The [code walkthrough](code/README.md) describes each module in detail: its functions, constants, limits and errors.
@@ -195,9 +194,9 @@ The app runs as one container from the image `ghcr.io/dev1l/kindergarten-email-c
 Health checks on Kubernetes call a small HTTP server in the app, port 8080. The server is `http.server` from the standard library, in a daemon thread. It adds less than 1 MB of memory. The main loop stays in one thread.
 
 - `/readyz`: 200 after the start check passes, 503 before. The readiness probe uses it. The start check runs once, so the pod stays ready after it.
-- `/livez`: always 200. The liveness probe restarts the container when the process does not answer.
-- Only the readiness probe depends on Telegram, Gmail and DeepSeek. A restart does not fix an outage of these services.
+- `/livez`: always 200. The liveness probe calls it every `livenessPeriodSeconds` seconds, a chart value, default 60. It restarts the container when the process does not answer, for example when it is frozen completely. A hang of the main loop alone is not detected.
+- Neither probe calls Telegram, Gmail or DeepSeek. The start check calls them once, in the main thread. An outage of these services later does not change the probes, because a restart does not fix it.
 
 The workflow **Deploy** in GitHub Actions runs `helm upgrade --install` with the chart of the selected branch. The image tag is `latest`, or a tag that the owner enters. The pod template has an annotation with a random value, so each upgrade replaces the pod, and the new pod pulls the tag again. With `--wait`, the workflow fails when the pod is not ready in 5 minutes, for example with wrong credentials.
 
-The chart uses the `RollingUpdate` strategy with `maxSurge` 1 and `maxUnavailable` 0. On an update, the old pod runs until the new pod is ready. A new pod with wrong credentials stops before its first poll, so the old pod keeps working. After a successful start check, both pods poll for a short time: until the next readiness probe, at most 10 seconds, and the stop of the old pod. An email that arrives in this time can get two posts. The workflow runs only when the owner starts it.
+The chart uses the `RollingUpdate` strategy with `maxSurge` 1 and `maxUnavailable` 0. On an update, the old pod runs until the new pod is ready. A new pod with wrong credentials stops before its first poll, so the old pod keeps working. After a successful start check, both pods poll for a short time: until the next readiness probe, at most `readinessPeriodSeconds` seconds (a chart value, default 10), and the stop of the old pod. An email that arrives in this time can get two posts. The workflow runs only when the owner starts it.
