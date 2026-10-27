@@ -143,7 +143,7 @@ def balance_answer(monkeypatch, status_code, data):
         calls.append(str(url))
         return FakeResponse(status_code, data)
 
-    monkeypatch.setattr(summarize_module.httpx, "get", get)
+    monkeypatch.setattr(summarize_module.httpx2, "get", get)
     return calls
 
 

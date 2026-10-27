@@ -91,7 +91,7 @@ The function cuts the plain text before it escapes it. A cut in the middle of `&
 
 Sends one Bot API request: `POST <TELEGRAM_BASE_URL>/bot<token>/<method>` with a JSON body. The timeout is `TELEGRAM_TIMEOUT_SECONDS`.
 
-When the answer has `"ok": false`, it raises `TelegramError` with the method, the HTTP status and Telegram's description. The function builds this message itself: an `httpx` error contains the URL, and the URL contains the bot token. It returns the `result` field of the answer.
+When the answer has `"ok": false`, it raises `TelegramError` with the method, the HTTP status and Telegram's description. The function builds this message itself: an `httpx2` error contains the URL, and the URL contains the bot token. It returns the `result` field of the answer.
 
 ### `check(settings)`
 
@@ -137,7 +137,7 @@ Every post is sent the same way, with a normal notification. The app does not se
 | `send_summary()` or `send_original()` fails | Exception to `main.process()`. One failed attempt |
 | `send_error()` fails | `main.process()` writes it to the log and still moves the email to `Failed` |
 
-Possible exceptions: `TelegramError` for an answer with `"ok": false`, an `httpx` error for a network problem, a JSON error for an answer that is not JSON. None of their messages contain the bot token.
+Possible exceptions: `TelegramError` for an answer with `"ok": false`, an `httpx2` error for a network problem, a JSON error for an answer that is not JSON. None of their messages contain the bot token.
 
 ## Tests
 

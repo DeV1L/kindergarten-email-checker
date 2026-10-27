@@ -86,7 +86,7 @@ class FakeResponse:
 def test_check_raises_without_the_token_in_the_message(monkeypatch):
     settings = make_settings()
     answer = FakeResponse(401, {"ok": False, "description": "Unauthorized"})
-    monkeypatch.setattr(telegram.httpx, "post", lambda url, json, timeout: answer)
+    monkeypatch.setattr(telegram.httpx2, "post", lambda url, json, timeout: answer)
     with pytest.raises(telegram.TelegramError) as error:
         telegram.check(settings)
     assert str(error.value) == "getChat failed: 401 Unauthorized"
@@ -100,6 +100,6 @@ def test_send_message_returns_the_message_id(monkeypatch):
         calls.append((url.rsplit("/", 1)[1], json["chat_id"]))
         return FakeResponse(200, {"ok": True, "result": {"message_id": 42}})
 
-    monkeypatch.setattr(telegram.httpx, "post", post)
+    monkeypatch.setattr(telegram.httpx2, "post", post)
     assert telegram.send_message("text", make_settings()) == 42
     assert calls == [("sendMessage", "-1001")]

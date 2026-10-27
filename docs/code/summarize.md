@@ -72,7 +72,7 @@ An exception class for a failed balance check. Why it is a class: `main.check_se
 
 Sends `GET /user/balance` to DeepSeek. The request is free.
 
-1. Builds the URL from `LLM_BASE_URL`. `httpx.URL.join("/user/balance")` replaces the path, so `https://api.deepseek.com/anthropic` gives `https://api.deepseek.com/user/balance`.
+1. Builds the URL from `LLM_BASE_URL`. `httpx2.URL.join("/user/balance")` replaces the path, so `https://api.deepseek.com/anthropic` gives `https://api.deepseek.com/user/balance`.
 2. Sends the API key in the `Authorization: Bearer` header. The timeout is `LLM_BALANCE_TIMEOUT_SECONDS`.
 3. When the status is not 200, raises `BalanceError` with the status and the error message from DeepSeek. A wrong key gives 401.
 4. Keeps the currencies with a balance above zero. `Decimal` compares the values, because DeepSeek sends them as text.

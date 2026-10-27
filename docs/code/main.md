@@ -39,7 +39,7 @@ The console entry point. It runs once.
 
 1. Creates `Settings()`. A missing required variable stops the process here with a `ValidationError`.
 2. Sets up logging to stdout with the level from `LOG_LEVEL`. The format is `time level logger: message`.
-3. Sets the loggers `httpx` and `httpx2` to `WARNING`. At `INFO`, these loggers write the URL of every request. The Telegram URL contains the bot token.
+3. Sets the logger `httpx2` to `WARNING`. `httpx2` is the HTTP library of the app and of the `anthropic` SDK. At `INFO`, it writes the URL of every request. The Telegram URL contains the bot token.
 4. Writes one start line: version, dedicated mailbox, model, poll interval. The line contains no secret.
 5. Starts the health server with `health.start()`.
 6. Runs `check_services()`.
@@ -124,7 +124,7 @@ Details:
 | `POLL_MINUTES` | Setting, default 10 | Pause after each poll |
 | `MAX_RETRIES_PER_MESSAGE` | Setting, default 3 | Failed attempts before the label `Failed` |
 | `LOG_LEVEL` | Setting, default `INFO` | Level of the root logger. `DEBUG` shows each poll |
-| `httpx`, `httpx2` logger level | `WARNING`, code only | Keeps the bot token out of the log |
+| `httpx2` logger level | `WARNING`, code only | Keeps the bot token out of the log |
 
 ## Errors and exit codes
 

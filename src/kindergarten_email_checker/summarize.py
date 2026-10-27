@@ -17,7 +17,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 import anthropic
-import httpx
+import httpx2
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from kindergarten_email_checker.config import Settings
@@ -79,8 +79,8 @@ class BalanceError(Exception):
 
 def check_balance(settings: Settings) -> str:
     """GET /user/balance. Fails on a wrong key or a zero balance. Returns the balance as text."""
-    response = httpx.get(
-        httpx.URL(settings.llm_base_url).join("/user/balance"),
+    response = httpx2.get(
+        httpx2.URL(settings.llm_base_url).join("/user/balance"),
         headers={"Authorization": f"Bearer {settings.llm_api_key}"},
         timeout=settings.llm_balance_timeout_seconds,
     )
