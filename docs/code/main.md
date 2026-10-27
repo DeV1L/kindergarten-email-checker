@@ -62,6 +62,8 @@ The start check. It runs three checks in order:
 | `mail.close(mail.connect())` | Wrong app password, or no connection to Gmail. It also creates the state labels |
 | `summarize.check_balance()` | Wrong API key, or the DeepSeek balance is zero |
 
+`mail.close(mail.connect())` tests the Gmail login only. `mail.connect()` logs in and creates the missing state labels. `mail.close()` logs out at once, because each poll opens its own connection. A failed login stops the check. A failed logout does not, because `mail.close()` ignores errors.
+
 The first failure stops the check. The function catches every exception, writes one error line with the exception type and message, and raises `SystemExit(1)`. `from None` removes the traceback. When all checks pass, it sets `ready = True` and writes the DeepSeek balance to the log.
 
 The check runs only once. The app does not poll before the check passes: with wrong credentials, every email would fail and end in `Failed`.
