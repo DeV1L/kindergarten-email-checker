@@ -187,7 +187,7 @@ An attempt is one run of `main.process()` for one email. When the attempt fails,
 
 ### Model try
 
-A model try is one call of `client.messages.create()` in `summarize.summarize()`. `summarize()` makes another model try only when the answer is unusable, up to `LLM_MODEL_TRIES` tries. An answer is unusable in two cases:
+A model try is one call of `client.messages.create()` in `summarize.summarize()`. `summarize()` makes another model try only when the answer is unusable (it has no call of `report_summary`, or the call input does not match `Summary`). The limit is `LLM_MODEL_TRIES` tries. The two cases in detail:
 
 1. The answer has no call of the tool `report_summary`.
 2. The input of the tool call does not match the schema `Summary`. For example, `urgency` is `"urgent"`, or `deadline` is not a date.

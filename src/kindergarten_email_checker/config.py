@@ -73,7 +73,9 @@ class Settings(BaseSettings):
     def sender_allowed(self, address: str) -> bool:
         """True when the address matches a rule exactly or ends with an @domain rule."""
         address = address.strip().lower()
-        return any(
-            address == rule or (rule.startswith("@") and address.endswith(rule))
-            for rule in self.allowed_sender_rules
-        )
+        for rule in self.allowed_sender_rules:
+            if address == rule:
+                return True
+            if rule.startswith("@") and address.endswith(rule):
+                return True
+        return False

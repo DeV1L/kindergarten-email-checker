@@ -46,6 +46,25 @@ pydantic-settings reads environment variables into the fields of a `BaseSettings
 
 In the container there is no `.env` file. Docker Compose (`env_file: .env`) and the Kubernetes secret (`envFrom`) give the values as environment variables.
 
+### How the values are read
+
+The app code does not read environment variables itself. `main.run()` calls `Settings()`, and the library pydantic-settings reads the values. It checks the sources in this order. The first source that has a value wins:
+
+1. Arguments to `Settings(...)`. Only the tests use them.
+2. Environment variables of the process. `EnvSettingsSource` reads `os.environ`. Names are case-insensitive: `POLL_MINUTES` fills `poll_minutes`.
+3. The file `.env`. `DotEnvSettingsSource` reads the file that `env_file` names.
+4. The default in `config.py`.
+
+`BaseSettings.settings_customise_sources()` sets this order. `Settings` does not override it.
+
+| Deployment | Source of the values |
+|------------|----------------------|
+| Local run | The file `.env` in the current directory |
+| Docker Compose | Environment variables. Compose reads `.env` on the host and gives each line to the container |
+| Kubernetes | Environment variables. `envFrom` gives each key of the secret to the container |
+
+On Kubernetes, the chart also sets variables with `env`, for example `HEALTH_PORT`. When a name is in `env` and in `envFrom`, Kubernetes uses the value from `env`.
+
 ### Fields
 
 The fields are in groups, in this order. Required fields have no default and are secrets or account data.
