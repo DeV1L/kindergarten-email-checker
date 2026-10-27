@@ -24,7 +24,7 @@ The app reads the settings only once, at start. A changed setting needs a restar
 | `Settings`, `model_config` | Class and its pydantic-settings configuration |
 | Fields | One field for each setting, in groups |
 | `_strip_spaces()` | Field validator |
-| `allowed_sender_rules` | Property |
+| `allowed_sender_addresses` | Property |
 | `sender_allowed()` | Method |
 
 ### Why `Settings` is a class
@@ -141,20 +141,14 @@ The app does not check `tz` at start. A wrong timezone name causes an error in `
 
 A field validator on `imap_password`. Gmail shows the app password in four groups of four letters, separated by spaces. The validator removes the spaces, so the owner can copy the password as Gmail shows it.
 
-### `allowed_sender_rules`
+### `allowed_sender_addresses`
 
-A property. It splits `allowed_senders` at commas, removes spaces, changes the rules to lower case and drops empty rules. A property and not a field, because the source of truth is the text setting.
+A property. It splits `allowed_senders` at commas, removes spaces, changes the addresses to lower case and drops empty items. A property and not a field, because the source of truth is the text setting.
 
 ### `sender_allowed(address) -> bool`
 
-Returns `True` when the address matches one rule. The address is changed to lower case first.
+Returns `True` when the address is on the allowlist.
 
-| Rule | Matches | Example |
-|------|---------|---------|
-| Full address | The same address only | `direccion@kinder.example` matches `Direccion@Kinder.example` |
-| `@domain` | Every address that ends with the rule | `@kinder.example` matches `ana@kinder.example`, not `ana@sub.kinder.example` |
-
-An empty allowlist matches nothing.
 
 ## Constants, limits and flags
 
@@ -174,5 +168,5 @@ The module never writes a secret to the log. Its error messages contain the fiel
 `tests/test_config.py` covers:
 
 - the spaces in the app password are removed;
-- the allowlist matches an exact address and a domain suffix, case-insensitive;
+- the allowlist matches an exact address only, case-insensitive;
 - an empty allowlist allows nobody.

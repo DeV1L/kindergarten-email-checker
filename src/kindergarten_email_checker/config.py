@@ -67,15 +67,9 @@ class Settings(BaseSettings):
         return value.replace(" ", "")
 
     @property
-    def allowed_sender_rules(self) -> list[str]:
-        return [rule.strip().lower() for rule in self.allowed_senders.split(",") if rule.strip()]
+    def allowed_sender_addresses(self) -> list[str]:
+        return [item.strip().lower() for item in self.allowed_senders.split(",") if item.strip()]
 
     def sender_allowed(self, address: str) -> bool:
-        """True when the address matches a rule exactly or ends with an @domain rule."""
-        address = address.strip().lower()
-        for rule in self.allowed_sender_rules:
-            if address == rule:
-                return True
-            if rule.startswith("@") and address.endswith(rule):
-                return True
-        return False
+        """True when the address is on the allowlist. Case-insensitive."""
+        return address.strip().lower() in self.allowed_sender_addresses

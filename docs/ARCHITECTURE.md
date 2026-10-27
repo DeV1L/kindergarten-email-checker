@@ -81,7 +81,7 @@ flowchart TD
     F --> M
 ```
 
-1. Allowlist: the From address is compared with `ALLOWED_SENDERS`, exact address or `@domain` suffix, case-insensitive. Gmail forwarding keeps the From header intact. A non-matching sender is moved to `Ignored` with no notification.
+1. Allowlist: the From address is compared with `ALLOWED_SENDERS`. Only an exact address matches, case-insensitive. Gmail forwarding keeps the From header intact. A non-matching sender is moved to `Ignored` with no notification.
 2. Extraction: read "Content extraction".
 3. Model call: read "The model call".
 4. Telegram: read "Telegram output".

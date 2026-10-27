@@ -65,7 +65,7 @@ Set these values in `.env`:
 |----------|-------|
 | `IMAP_USER` | `<dedicated address>` |
 | `IMAP_PASSWORD` | `<app password>` |
-| `ALLOWED_SENDERS` | The kindergarten addresses or `@domain` suffixes, separated by commas. The app moves email from all other senders to `Ignored` |
+| `ALLOWED_SENDERS` | The kindergarten addresses, separated by commas. Only an exact address matches. The app moves email from all other senders to `Ignored` |
 | `LLM_API_KEY` | `<DeepSeek key>` |
 | `TELEGRAM_BOT_TOKEN` | `<bot token>` |
 | `TELEGRAM_CHAT_ID` | `<chat id>` |
