@@ -34,9 +34,6 @@ def run() -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stdout,
     )
-    # httpx2 (Telegram and the Anthropic SDK) logs every request URL at INFO.
-    # Telegram URLs contain the bot token, and the app logs one line per email.
-    logging.getLogger("httpx2").setLevel(logging.WARNING)
     log.info(
         "kindergarten-email-checker %s starting: mailbox=%s model=%s poll=%s min",
         __version__,

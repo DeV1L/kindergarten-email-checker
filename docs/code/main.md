@@ -38,13 +38,14 @@ The logger has the package name, `kindergarten_email_checker`, not `__name__`. T
 The console entry point. It runs once.
 
 1. Creates `Settings()`. A missing required variable stops the process here with a `ValidationError`.
-2. Sets up logging to stdout with the level from `LOG_LEVEL`. The format is `time level logger: message`.
-3. Sets the logger `httpx2` to `WARNING`. `httpx2` is the HTTP library of the app and of the `anthropic` SDK. At `INFO`, it writes the URL of every request. The Telegram URL contains the bot token.
-4. Writes one start line: version, dedicated mailbox, model, poll interval. The line contains no secret.
-5. Starts the health server with `health.start()`.
-6. Runs `check_services()`.
-7. Runs `loop()`. This call does not return.
-8. Returns 0. The code never gets here in practice.
+2. Sets up logging to stdout with the level from `LOG_LEVEL`. The format is `time level logger: message`. All loggers use this level: the app and all libraries.
+3. Writes one start line: version, dedicated mailbox, model, poll interval. The line contains no secret.
+4. Starts the health server with `health.start()`.
+5. Runs `check_services()`.
+6. Runs `loop()`. This call does not return.
+7. Returns 0. The code never gets here in practice.
+
+At `INFO`, the HTTP library `httpx2` writes one line for each request, with the URL. The URL of a Telegram request contains the bot token, so the log shows the token.
 
 ### `check_services(settings)`
 
@@ -123,8 +124,7 @@ Details:
 | `CONNECTION_ERRORS` | `(imaplib.IMAP4.abort, OSError)` | A failed or dropped connection. `OSError` includes socket, timeout and SSL errors. These get one warning line without a traceback |
 | `POLL_MINUTES` | Setting, default 10 | Pause after each poll |
 | `MAX_RETRIES_PER_MESSAGE` | Setting, default 3 | Failed attempts before the label `Failed` |
-| `LOG_LEVEL` | Setting, default `INFO` | Level of the root logger. `DEBUG` shows each poll |
-| `httpx2` logger level | `WARNING`, code only | Keeps the bot token out of the log |
+| `LOG_LEVEL` | Setting, default `INFO` | Level of all loggers. `DEBUG` shows each poll. At `INFO` and `DEBUG`, the log shows the URL of each Telegram request. This URL contains the bot token |
 
 ## Errors and exit codes
 

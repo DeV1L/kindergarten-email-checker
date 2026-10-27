@@ -126,7 +126,7 @@ Loop:
 | `poll_minutes` | 10 | Pause after each poll |
 | `max_attachment_mb` | 10 | Larger attachments are not sent to the model |
 | `max_retries_per_message` | 3 | Failed attempts before the label `Failed` |
-| `log_level` | `INFO` | Log level. A name that is not a level stops the app at start |
+| `log_level` | `INFO` | Log level of the app and all libraries. A name that is not a level stops the app at start. At `INFO` and `DEBUG`, the log shows the URL of each Telegram request. This URL contains the bot token |
 | `tz` | `America/Argentina/Buenos_Aires` | Timezone of the dates in the prompt and the post |
 
 Health checks:

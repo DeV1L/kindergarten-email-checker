@@ -99,7 +99,7 @@ The other variables have defaults:
 | `MAX_ATTACHMENT_MB` | `10` | The app does not send larger attachments to the model. The post still lists their names |
 | `MAX_RETRIES_PER_MESSAGE` | `3` | Attempts before the app moves an email to `Failed` |
 | `TZ` | `America/Argentina/Buenos_Aires` | Timezone for the dates in emails and posts |
-| `LOG_LEVEL` | `INFO` | Log level |
+| `LOG_LEVEL` | `INFO` | Log level of the app and all libraries. At `INFO` and `DEBUG`, the log shows the URL of each Telegram request. This URL contains the bot token |
 | `HEALTH_PORT` | `8080` | Port of the health checks `/readyz` and `/livez`. On Kubernetes, the chart value `healthPort` sets it |
 | `IMAGE_TAG` | `latest` | The image tag. Only Docker Compose reads it |
 
