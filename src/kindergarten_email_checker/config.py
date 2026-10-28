@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 120
     llm_tool_name: str = "report_summary"
     llm_max_tokens: int = 16_000  # thinking and the tool call together
+    llm_model_tries: int = 2  # model calls for one email when the answer is unusable
     llm_balance_timeout_seconds: float = 30
 
     # Telegram
@@ -38,6 +39,7 @@ class Settings(BaseSettings):
     telegram_chat_id: str
     telegram_base_url: str = "https://api.telegram.org"
     telegram_max_message_chars: int = 4096
+    telegram_max_error_chars: int = 500  # error text in an error post
     telegram_timeout_seconds: float = 30
 
     # Content extraction
@@ -65,13 +67,9 @@ class Settings(BaseSettings):
         return value.replace(" ", "")
 
     @property
-    def allowed_sender_rules(self) -> list[str]:
-        return [rule.strip().lower() for rule in self.allowed_senders.split(",") if rule.strip()]
+    def allowed_sender_addresses(self) -> list[str]:
+        return [item.strip().lower() for item in self.allowed_senders.split(",") if item.strip()]
 
     def sender_allowed(self, address: str) -> bool:
-        """True when the address matches a rule exactly or ends with an @domain rule."""
-        address = address.strip().lower()
-        return any(
-            address == rule or (rule.startswith("@") and address.endswith(rule))
-            for rule in self.allowed_sender_rules
-        )
+        """True when the address is on the allowlist. Case-insensitive."""
+        return address.strip().lower() in self.allowed_sender_addresses

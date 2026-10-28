@@ -65,7 +65,7 @@ Set these values in `.env`:
 |----------|-------|
 | `IMAP_USER` | `<dedicated address>` |
 | `IMAP_PASSWORD` | `<app password>` |
-| `ALLOWED_SENDERS` | The kindergarten addresses or `@domain` suffixes, separated by commas. The app moves email from all other senders to `Ignored` |
+| `ALLOWED_SENDERS` | The kindergarten addresses, separated by commas. Only an exact address matches. The app moves email from all other senders to `Ignored` |
 | `LLM_API_KEY` | `<DeepSeek key>` |
 | `TELEGRAM_BOT_TOKEN` | `<bot token>` |
 | `TELEGRAM_CHAT_ID` | `<chat id>` |
@@ -83,9 +83,11 @@ The other variables have defaults:
 | `LLM_TIMEOUT_SECONDS` | `120` | Timeout of one model call |
 | `LLM_TOOL_NAME` | `report_summary` | The name of the tool that returns the summary. The app puts the same name into the system prompt |
 | `LLM_MAX_TOKENS` | `16000` | Output limit of one model call, for thinking and the tool call together |
+| `LLM_MODEL_TRIES` | `2` | Model calls for one email. The app calls the model again only when the answer is unusable |
 | `LLM_BALANCE_TIMEOUT_SECONDS` | `30` | Timeout of the DeepSeek balance check at start |
 | `TELEGRAM_BASE_URL` | `https://api.telegram.org` | The Telegram Bot API server |
 | `TELEGRAM_MAX_MESSAGE_CHARS` | `4096` | Telegram's limit for one message. The app trims longer posts |
+| `TELEGRAM_MAX_ERROR_CHARS` | `500` | Length of the error text in an error post. The app trims a longer error text. The log holds the full error |
 | `TELEGRAM_TIMEOUT_SECONDS` | `30` | Timeout of one Telegram call |
 | `MIN_IMAGE_BYTES` | `20480` | Smaller images are logos and signature graphics. The app skips them |
 | `MAX_PDF_PAGES_RENDERED` | `10` | Pages of a scanned PDF that go to the model as images |
@@ -97,7 +99,7 @@ The other variables have defaults:
 | `MAX_ATTACHMENT_MB` | `10` | The app does not send larger attachments to the model. The post still lists their names |
 | `MAX_RETRIES_PER_MESSAGE` | `3` | Attempts before the app moves an email to `Failed` |
 | `TZ` | `America/Argentina/Buenos_Aires` | Timezone for the dates in emails and posts |
-| `LOG_LEVEL` | `INFO` | Log level |
+| `LOG_LEVEL` | `INFO` | Log level of the app and all libraries. At `INFO` and `DEBUG`, the log shows the URL of each Telegram request. This URL contains the bot token |
 | `HEALTH_PORT` | `8080` | Port of the health checks `/readyz` and `/livez`. On Kubernetes, the chart value `healthPort` sets it |
 | `IMAGE_TAG` | `latest` | The image tag. Only Docker Compose reads it |
 
@@ -232,7 +234,7 @@ The Helm chart is in [charts/kindergarten-email-checker](../charts/kindergarten-
 | Pull policy | `Always`. Each `helm upgrade` replaces the pod, so the new pod pulls the image again |
 | User | 10001, non-root |
 | Security | Read-only root filesystem, no capabilities, no privilege escalation, no service account token |
-| Health checks | A readiness probe on `/readyz` and a liveness probe on `/livez`, port 8080. Read "Health checks" in the [operations guide](OPERATIONS.md) |
+| Health checks | A readiness probe on `/readyz` and a liveness probe on `/livez`, port 8080. The chart values `readinessPeriodSeconds` (default 10) and `livenessPeriodSeconds` (default 60) set how often they run. Read "Health checks" in the [operations guide](OPERATIONS.md) |
 | Resources | Memory request and limit 128 MiB, CPU request 50m |
 | Settings | All variables come from an existing secret, `existingSecret` in the chart values, default `kindergarten-email-checker`. The chart does not create or hold secrets. `env` in the chart values overrides single variables |
 

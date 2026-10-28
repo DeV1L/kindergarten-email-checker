@@ -1,4 +1,4 @@
-"""The model call (docs/ARCHITECTURE.md, section 8).
+"""The model call.
 
 One Anthropic Messages API request to DeepSeek with thinking enabled. The summary comes back
 as the input of a `report_summary` tool call and is validated against `Summary`.
@@ -11,13 +11,12 @@ import base64
 import json
 import logging
 from datetime import date, datetime
-from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
 
 import anthropic
-import httpx
+import httpx2
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from kindergarten_email_checker.config import Settings
@@ -78,9 +77,12 @@ class BalanceError(Exception):
 
 
 def check_balance(settings: Settings) -> str:
-    """GET /user/balance. Fails on a wrong key or a zero balance. Returns the balance as text."""
-    response = httpx.get(
-        httpx.URL(settings.llm_base_url).join("/user/balance"),
+    """GET /user/balance. Fails on a wrong key or when the account cannot call the API.
+
+    Returns the balance as text, one entry per currency.
+    """
+    response = httpx2.get(
+        httpx2.URL(settings.llm_base_url).join("/user/balance"),
         headers={"Authorization": f"Bearer {settings.llm_api_key}"},
         timeout=settings.llm_balance_timeout_seconds,
     )
@@ -88,14 +90,10 @@ def check_balance(settings: Settings) -> str:
     if response.status_code != 200:
         message = data.get("error", {}).get("message")
         raise BalanceError(f"user/balance failed: {response.status_code} {message}")
-    balances = [
-        f"{info['total_balance']} {info['currency']}"
-        for info in data["balance_infos"]
-        if Decimal(info["total_balance"]) > 0
-    ]
-    if not balances:
-        raise BalanceError("the DeepSeek balance is zero")
-    return ", ".join(balances)
+    balances = ", ".join(f"{i['total_balance']} {i['currency']}" for i in data["balance_infos"])
+    if not data["is_available"]:
+        raise BalanceError(f"DeepSeek account cannot call the API, balance {balances}")
+    return balances
 
 
 def make_client(settings: Settings) -> anthropic.Anthropic:
@@ -109,14 +107,14 @@ def make_client(settings: Settings) -> anthropic.Anthropic:
 def summarize(
     content: EmailContent, settings: Settings, client: anthropic.Anthropic | None = None
 ) -> Summary | None:
-    """Ask the model for a Summary. One retry on invalid output. None after two invalid outputs.
+    """Ask the model for a Summary, up to LLM_MODEL_TRIES times. None when no answer is usable.
 
     API errors (timeout, 5xx, 429 after the SDK's own retries) are raised to the caller.
     """
     client = client or make_client(settings)
     tool_name = settings.llm_tool_name
     messages: list[dict] = [{"role": "user", "content": user_content(content, settings)}]
-    for attempt in (1, 2):
+    for attempt in range(1, settings.llm_model_tries + 1):
         response = client.messages.create(
             model=settings.llm_model,
             max_tokens=settings.llm_max_tokens,

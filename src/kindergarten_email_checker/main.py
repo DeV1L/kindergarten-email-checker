@@ -1,8 +1,11 @@
-"""Process entry point and the main loop (docs/ARCHITECTURE.md, sections 4 and 5).
+"""Process entry point and the main loop.
 
 At start: check Telegram, Gmail and DeepSeek. Stop when one of them fails.
 Then every POLL_MINUTES: connect, process every unseen email, log out.
 An IMAP error ends the poll. The next poll tries again.
+
+An HTTP server in a daemon thread answers the Kubernetes probes:
+GET /readyz answers 200 after the start check, GET /livez answers 200 while the process runs.
 """
 
 from __future__ import annotations
@@ -10,11 +13,13 @@ from __future__ import annotations
 import imaplib
 import logging
 import sys
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from imap_tools import MailBox, MailMessage
 
-from kindergarten_email_checker import __version__, health, mail, telegram
+from kindergarten_email_checker import __version__, mail, telegram
 from kindergarten_email_checker.config import Settings
 from kindergarten_email_checker.content import extract
 from kindergarten_email_checker.summarize import check_balance, summarize
@@ -25,6 +30,8 @@ log = logging.getLogger("kindergarten_email_checker")
 # The next poll tries again, so these get one warning line. Any other error gets a traceback.
 CONNECTION_ERRORS = (imaplib.IMAP4.abort, OSError)
 
+ready = False  # /readyz: set by check_services(), read by the HTTP server thread
+
 
 def run() -> int:
     """Console entry point."""
@@ -34,10 +41,6 @@ def run() -> int:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stdout,
     )
-    # httpx (Telegram) and httpx2 (Anthropic SDK) log every request URL at INFO.
-    # Telegram URLs contain the bot token, and the tool logs one line per email.
-    for name in ("httpx", "httpx2"):
-        logging.getLogger(name).setLevel(logging.WARNING)
     log.info(
         "kindergarten-email-checker %s starting: mailbox=%s model=%s poll=%s min",
         __version__,
@@ -45,7 +48,7 @@ def run() -> int:
         settings.llm_model,
         settings.poll_minutes,
     )
-    health.start(settings.health_port)
+    start_health(settings)
     check_services(settings)
     loop(settings)
     return 0
@@ -65,7 +68,8 @@ def check_services(settings: Settings) -> None:
     except Exception as error:
         log.error("start check failed (%s: %s), exiting", type(error).__name__, error)
         raise SystemExit(1) from None
-    health.ready = True
+    global ready
+    ready = True
     log.info("start check passed: Telegram, Gmail and DeepSeek, DeepSeek balance %s", balance)
 
 
@@ -147,3 +151,28 @@ def process(
         message_id,
         time.monotonic() - started,
     )
+
+
+def health_status(path: str) -> int:
+    """HTTP status code for a probe path."""
+    if path == "/readyz":
+        return 200 if ready else 503
+    if path == "/livez":
+        return 200
+    return 404
+
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        self.send_response(health_status(self.path))
+        self.end_headers()
+
+    def log_message(self, format: str, *args: object) -> None:
+        pass  # the probes call every few seconds; one line per call would fill the log
+
+
+def start_health(settings: Settings) -> HTTPServer:
+    """Start the HTTP server for the probes in a daemon thread. Port 0 picks a free port."""
+    server = HTTPServer(("", settings.health_port), HealthHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server

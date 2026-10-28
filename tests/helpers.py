@@ -16,7 +16,7 @@ def make_settings(**overrides):
         llm_api_key="key",
         telegram_bot_token="token",
         telegram_chat_id="-1001",
-        allowed_senders="Direccion@Kinder.example, @kinder.example",
+        allowed_senders="Direccion@Kinder.example, secretaria@kinder.example",
     )
     values.update(overrides)
     return Settings(_env_file=None, **values)

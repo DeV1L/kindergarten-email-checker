@@ -2,7 +2,7 @@
 
 This project reads the emails of a kindergarten in Spanish from a dedicated Gmail account over IMAP. DeepSeek summarizes each email in Russian, with urgency and dates. The app posts the summary to a private Telegram group. It is one Python process in a Docker container, on a VPS or on Kubernetes.
 
-Start with `README.md`, `docs/SETUP.md` and `docs/OPERATIONS.md`. They describe the repository structure, the setup and the daily tasks. `docs/ARCHITECTURE.md` describes the design, the module map and the failure handling.
+Start with `README.md`, `docs/SETUP.md` and `docs/OPERATIONS.md`. They describe the repository structure, the setup and the daily tasks. `docs/ARCHITECTURE.md` describes the design, the module map and the failure handling. `docs/code/` has one walkthrough for each module.
 
 ## Hard rules
 
@@ -23,7 +23,7 @@ Start with `README.md`, `docs/SETUP.md` and `docs/OPERATIONS.md`. They describe 
 
 ## Development rules
 
-- When the logic changes, update the documentation in the same commit: `README.md`, `docs/SETUP.md`, `docs/OPERATIONS.md`, `docs/ARCHITECTURE.md` and `.env.example`, as applicable. The documentation describes how the app works now.
+- When the logic changes, update the documentation in the same commit: `README.md`, `docs/SETUP.md`, `docs/OPERATIONS.md`, `docs/ARCHITECTURE.md`, the module walkthroughs in `docs/code/` and `.env.example`, as applicable. The documentation describes how the app works now.
 - Before you hand over a change, run the linter, the format check and the tests. The commands are in "Local development" in `docs/SETUP.md`.
 - Commit messages are brief: one line.
 

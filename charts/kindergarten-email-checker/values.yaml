@@ -13,6 +13,10 @@ env: {}
 # Port of the health checks /readyz and /livez. The chart passes it to the app as HEALTH_PORT.
 healthPort: 8080
 
+# How often Kubernetes calls /readyz and /livez, in seconds.
+readinessPeriodSeconds: 10
+livenessPeriodSeconds: 60
+
 resources:
   requests:
     cpu: 50m

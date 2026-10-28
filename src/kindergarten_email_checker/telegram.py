@@ -1,11 +1,11 @@
-"""Telegram Bot API client (docs/ARCHITECTURE.md, section 9)."""
+"""Telegram Bot API client."""
 
 from __future__ import annotations
 
 from datetime import date
 from html import escape
 
-import httpx
+import httpx2
 
 from kindergarten_email_checker.config import Settings
 from kindergarten_email_checker.content import EmailContent
@@ -94,14 +94,14 @@ def with_original(top: str, content: EmailContent, settings: Settings) -> str:
 
 def call(method: str, payload: dict, settings: Settings) -> dict:
     """Call a Bot API method. Returns its result."""
-    response = httpx.post(
+    response = httpx2.post(
         f"{settings.telegram_base_url}/bot{settings.telegram_bot_token}/{method}",
         json=payload,
         timeout=settings.telegram_timeout_seconds,
     )
     data = response.json()
     if not data.get("ok"):
-        # Build the error by hand: httpx errors include the URL, and the URL contains the token.
+        # Build the error by hand: httpx2 errors include the URL, and the URL contains the token.
         raise TelegramError(f"{method} failed: {response.status_code} {data.get('description')}")
     return data["result"]
 
@@ -132,5 +132,6 @@ def send_original(content: EmailContent, settings: Settings) -> int:
 
 def send_error(subject: str, error: str, settings: Settings) -> None:
     """Post a processing error to the group."""
-    text = f"⚠️ Не удалось обработать письмо «{escape(subject)}»: {escape(error[:500])}"
+    error = error[: settings.telegram_max_error_chars]
+    text = f"⚠️ Не удалось обработать письмо «{escape(subject)}»: {escape(error)}"
     send_message(text, settings)

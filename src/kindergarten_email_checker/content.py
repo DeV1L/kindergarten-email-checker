@@ -1,4 +1,4 @@
-"""Turn one email into model inputs (docs/ARCHITECTURE.md, section 7)."""
+"""Turn one email into model inputs."""
 
 from __future__ import annotations
 

@@ -61,13 +61,13 @@ spec:
             httpGet:
               path: /readyz
               port: health
-            periodSeconds: 10
+            periodSeconds: {{ .Values.readinessPeriodSeconds }}
           # /livez: the process runs and answers.
           livenessProbe:
             httpGet:
               path: /livez
               port: health
-            periodSeconds: 60
+            periodSeconds: {{ .Values.livenessPeriodSeconds }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:

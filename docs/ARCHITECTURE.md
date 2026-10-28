@@ -43,18 +43,19 @@ Module map:
 
 | Module | Role |
 |---|---|
-| `main.py` | Entry point and the poll loop: connect, fetch, process, move, log out |
+| `main.py` | Entry point and the poll loop: connect, fetch, process, move, log out. The HTTP server for the Kubernetes probes, in a daemon thread |
 | `config.py` | Settings from environment variables, with their defaults. Allowlist matching |
 | `mail.py` | IMAP connection, fetching unseen mail, moving between labels |
 | `content.py` | HTML to text, PDF text extraction, rendering scanned pages, size caps |
 | `summarize.py` | Output schema, tool definition, the model call, validation and retry, the balance check |
 | `telegram.py` | Message formatting, sendMessage, error posts, the start check with getChat |
-| `health.py` | HTTP server for the Kubernetes probes, in a daemon thread |
 | `prompt.md` | System prompt |
+
+The [code walkthrough](code/README.md) describes each module in detail: its functions, constants, limits and errors.
 
 ## Runtime loop
 
-1. At start: check Telegram, Gmail and DeepSeek. Telegram `getChat` checks the bot token and the group. A Gmail login checks the app password. DeepSeek `GET /user/balance` checks the API key and that the balance is above zero. This request is free. On failure: one error line, then the app stops with exit code 1. Docker or Kubernetes starts it again, with a longer delay after each failure. The app does not poll before all checks pass, because otherwise every email would fail and end in `Failed`.
+1. At start: check Telegram, Gmail and DeepSeek. Telegram `getChat` checks the bot token and the group. A Gmail login checks the app password. DeepSeek `GET /user/balance` checks the API key and that the account can call the API: the field `is_available` must be `true`. This request is free. On failure: one error line, then the app stops with exit code 1. Docker or Kubernetes starts it again, with a longer delay after each failure. The app does not poll before all checks pass, because otherwise every email would fail and end in `Failed`.
 2. Forever: poll the mailbox, then wait `POLL_MINUTES`. The first poll runs after the start check.
 3. A poll opens a new IMAP connection, creates the state labels if missing, processes everything unseen and logs out.
 4. An IMAP error ends the poll. The app closes the connection, and the next poll tries again. A failed or dropped connection (IMAP abort, socket, SSL or timeout error) gets one warning line without a traceback. Any other IMAP error gets a full traceback. The logout after a dropped connection fails too; that error is ignored. The loop never exits on its own.
@@ -79,7 +80,7 @@ flowchart TD
     F --> M
 ```
 
-1. Allowlist: the From address is compared with `ALLOWED_SENDERS`, exact address or `@domain` suffix, case-insensitive. Gmail forwarding keeps the From header intact. A non-matching sender is moved to `Ignored` with no notification.
+1. Allowlist: the From address is compared with `ALLOWED_SENDERS`. Only an exact address matches, case-insensitive. Gmail forwarding keeps the From header intact. A non-matching sender is moved to `Ignored` with no notification.
 2. Extraction: read "Content extraction".
 3. Model call: read "The model call".
 4. Telegram: read "Telegram output".
@@ -116,7 +117,7 @@ stateDiagram-v2
 
 The limits in this section are settings with defaults. The list is in "Settings" in [SETUP.md](SETUP.md).
 
-Caps: attachments above `MAX_ATTACHMENT_MB` are not sent to the model; the request body stays under DeepSeek's 48 MiB limit; body text is truncated at about 40,000 characters with a note.
+Caps: attachments above `MAX_ATTACHMENT_MB` are not sent to the model; body text is truncated at about 40,000 characters with a note. There is no cap on the total size of the images. Many large photos in one email can exceed DeepSeek's 48 MiB request limit. The model call then fails, and the email follows the normal retry path.
 
 ## The model call
 
@@ -124,7 +125,7 @@ Caps: attachments above `MAX_ATTACHMENT_MB` are not sent to the model; the reque
 - Model: `deepseek-flash` (DeepSeek-V4.1-Flash). Cheapest, accepts images, recommended by DeepSeek. `deepseek-v4-pro` is text-only.
 - Thinking: enabled. The request carries `thinking={"type": "enabled", "budget_tokens": 8000}`; DeepSeek ignores `budget_tokens` and reads the effort from `output_config={"effort": LLM_EFFORT}`. The app reads only the tool call from the response. On a retry, the full previous response, thinking blocks included, goes back to the model.
 - Output shaping: one tool, `report_summary`, whose `input_schema` is `Summary.model_json_schema()`. The request uses `tool_choice={"type": "auto"}`, and the system prompt tells the model to call the tool exactly once. DeepSeek rejects a forced tool choice when thinking is on (tested 2026-10-05: "Thinking mode does not support this tool_choice"). DeepSeek's Anthropic format has no structured-output mode and no JSON mode, so the tool call carries the schema.
-- Validation: `Summary.model_validate(tool_use.input)`. For `action_ru`, `deadline`, `event_date` and `event_time`, the text values "null", "none" and an empty string count as no value. The model sometimes writes the text "null" instead of JSON null. When the model writes tool arguments that are not valid JSON, DeepSeek does not report an error: it returns the tool call with empty input `{}`, which fails validation. On a validation error: one retry with a `tool_result` block that carries the error. On a missing tool call: one retry with the message "Call the report_summary tool." After two failures: subject, sender and original text go to Telegram without a summary, and the email is still moved to `Processed`.
+- Validation: `Summary.model_validate(tool_use.input)`. For `action_ru`, `deadline`, `event_date` and `event_time`, the text values "null", "none" and an empty string count as no value. The model sometimes writes the text "null" instead of JSON null. When the model writes tool arguments that are not valid JSON, DeepSeek does not report an error: it returns the tool call with empty input `{}`, which fails validation. On a validation error: a retry with a `tool_result` block that carries the error. On a missing tool call: a retry with the message "Call the report_summary tool." The app calls the model at most `LLM_MODEL_TRIES` times, default 2. After the last failure: subject, sender and original text go to Telegram without a summary, and the email is still moved to `Processed`.
 - API errors: the SDK retries timeouts, 429 and 5xx twice. After that the error goes to the main loop, which counts an attempt (read "Failure handling").
 - Inputs: the system prompt from `prompt.md`; a user message with a metadata block (From, Subject, sent date in the `TZ` timezone, today's date), the body text, the PDF texts, the list of files not sent to the model, and the image blocks.
 - `max_tokens`: 16,000, for thinking and the tool call together. The test call used about 830 output tokens.
@@ -169,8 +170,8 @@ Rules:
 - Attachments: one line with the file names, except skipped small images. The files themselves are not sent.
 - Footer: subject, sender and the date the email was sent, with the year and time, in the `TZ` timezone. For a manual forward, this is the date of the forward.
 - Fallback post when the model output is unusable: `⚠️ Без сводки`, the attachment names and the original text in an expandable quote. This is the only post that quotes the email, because it has no summary. Telegram's limit is 4096 characters, so the original is trimmed to fit and ends with `…`.
-- Log hygiene: Telegram URLs contain the bot token. The app sets the `httpx` and `httpx2` loggers to WARNING and builds Telegram error messages without the URL. The Anthropic SDK uses `httpx2`.
-- Error post: `⚠️ Не удалось обработать письмо «subject»: error`, at most once per email.
+- Log: one level, `LOG_LEVEL`, for the app and all libraries. The app and the Anthropic SDK send HTTP requests with the library `httpx2`. At `INFO`, `httpx2` logs the URL of each request. Telegram URLs contain the bot token, so the log shows the token. The app runs in a homelab, so this is accepted. Telegram error messages are built without the URL.
+- Error post: `⚠️ Не удалось обработать письмо «subject»: error`, at most once per email. The error text is trimmed at `TELEGRAM_MAX_ERROR_CHARS` characters, default 500.
 
 ## Failure handling
 
@@ -179,7 +180,7 @@ IMAP errors are described in "Runtime loop".
 | Failure | Behaviour |
 |---|---|
 | Model timeout, 5xx, 429 | Attempt counter +1, email stays unseen, retried in the next poll |
-| Model output invalid twice in one attempt | Original text forwarded, email `Processed` |
+| Model output invalid `LLM_MODEL_TRIES` times in one attempt | Original text forwarded, email `Processed` |
 | Telegram error | Attempt counter +1, email stays unseen |
 | Attempts exhausted | Moved to `Failed`, error posted once |
 | Process crash | Docker or Kubernetes restarts it. Nothing is lost because the state lives in Gmail |
@@ -193,9 +194,9 @@ The app runs as one container from the image `ghcr.io/dev1l/kindergarten-email-c
 Health checks on Kubernetes call a small HTTP server in the app, port 8080. The server is `http.server` from the standard library, in a daemon thread. It adds less than 1 MB of memory. The main loop stays in one thread.
 
 - `/readyz`: 200 after the start check passes, 503 before. The readiness probe uses it. The start check runs once, so the pod stays ready after it.
-- `/livez`: always 200. The liveness probe restarts the container when the process does not answer.
-- Only the readiness probe depends on Telegram, Gmail and DeepSeek. A restart does not fix an outage of these services.
+- `/livez`: always 200. The liveness probe calls it every `livenessPeriodSeconds` seconds, a chart value, default 60. It restarts the container when the process does not answer, for example when it is frozen completely. A hang of the main loop alone is not detected.
+- Neither probe calls Telegram, Gmail or DeepSeek. The start check calls them once, in the main thread. An outage of these services later does not change the probes, because a restart does not fix it.
 
 The workflow **Deploy** in GitHub Actions runs `helm upgrade --install` with the chart of the selected branch. The image tag is `latest`, or a tag that the owner enters. The pod template has an annotation with a random value, so each upgrade replaces the pod, and the new pod pulls the tag again. With `--wait`, the workflow fails when the pod is not ready in 5 minutes, for example with wrong credentials.
 
-The chart uses the `RollingUpdate` strategy with `maxSurge` 1 and `maxUnavailable` 0. On an update, the old pod runs until the new pod is ready. A new pod with wrong credentials stops before its first poll, so the old pod keeps working. After a successful start check, both pods poll for a short time: until the next readiness probe, at most 10 seconds, and the stop of the old pod. An email that arrives in this time can get two posts. The workflow runs only when the owner starts it.
+The chart uses the `RollingUpdate` strategy with `maxSurge` 1 and `maxUnavailable` 0. On an update, the old pod runs until the new pod is ready. A new pod with wrong credentials stops before its first poll, so the old pod keeps working. After a successful start check, both pods poll for a short time: until the next readiness probe, at most `readinessPeriodSeconds` seconds (a chart value, default 10), and the stop of the old pod. An email that arrives in this time can get two posts. The workflow runs only when the owner starts it.

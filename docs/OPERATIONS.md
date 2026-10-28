@@ -6,6 +6,8 @@ This guide describes daily tasks for the app on Docker Compose and on Kubernetes
 
 The app writes one log line for each processed email: UID, sender, subject, urgency, deadline, Telegram message id and duration. An invalid model answer gives one warning line with a JSON object: the problem, the input of the tool call and the validation errors. The app also posts failures to the group, so the owner sees them where the summaries are.
 
+The HTTP library `httpx2` writes one `INFO` line for each request to Telegram and DeepSeek. The line contains the URL. The URL of a Telegram request contains the bot token, so the log shows the token.
+
 A poll that finds no new email writes no log line at the `INFO` level. A poll that cannot connect to the mailbox writes one warning line. The next poll tries again. To see each poll, set `LOG_LEVEL=DEBUG`. Read "Change a setting".
 
 On the VPS:
@@ -22,14 +24,14 @@ kubectl -n kindergarten logs -f deployment/kindergarten-email-checker
 
 ## Health checks
 
-At start, the app checks Telegram, Gmail and DeepSeek. Telegram must accept the bot token and find the group. Gmail must accept the app password. DeepSeek must accept the API key, and the balance must be above zero. The app does not poll the mailbox before all three checks pass. The log line of a passed check shows the DeepSeek balance. After a failed check, the app writes one error line and stops. Docker or Kubernetes starts it again, with a longer delay after each failure. On Kubernetes, the pod status is then `CrashLoopBackOff`.
+At start, the app checks Telegram, Gmail and DeepSeek. Telegram must accept the bot token and find the group. Gmail must accept the app password. DeepSeek must accept the API key and report that the account can call the API. With a zero balance, it cannot. The app does not poll the mailbox before all three checks pass. The log line of a passed check shows the DeepSeek balance. After a failed check, the app writes one error line and stops. Docker or Kubernetes starts it again, with a longer delay after each failure. On Kubernetes, the pod status is then `CrashLoopBackOff`.
 
 On Kubernetes, two probes call an HTTP server in the app, port 8080:
 
 | Probe | Path | What it does |
 |-------|------|--------------|
 | Readiness | `/readyz` | The pod is ready after the start check passes. With wrong credentials, the pod stays not ready |
-| Liveness | `/livez` | Kubernetes restarts the container when the app does not answer |
+| Liveness | `/livez` | Kubernetes restarts the container when the app does not answer. The probe runs every `livenessPeriodSeconds` seconds, a chart value, default 60 |
 
 Show the pod. The column `READY` shows `1/1` after the start check. The column `RESTARTS` counts the restarts:
 

@@ -100,6 +100,12 @@ def test_two_bad_answers_return_none():
     assert len(client.calls) == 2
 
 
+def test_model_tries_come_from_the_settings():
+    client = FakeClient(text_response(), text_response(), tool_response(VALID))
+    assert summarize(content(), make_settings(llm_model_tries=3), client).urgency == "high"
+    assert len(client.calls) == 3
+
+
 def test_text_null_means_no_value():
     summary = Summary.model_validate(
         {**VALID, "action_ru": "null", "deadline": "None", "event_date": " ", "event_time": ""}
@@ -137,7 +143,7 @@ def balance_answer(monkeypatch, status_code, data):
         calls.append(str(url))
         return FakeResponse(status_code, data)
 
-    monkeypatch.setattr(summarize_module.httpx, "get", get)
+    monkeypatch.setattr(summarize_module.httpx2, "get", get)
     return calls
 
 
@@ -157,9 +163,9 @@ def test_check_balance_returns_the_balance(monkeypatch):
     assert calls == ["https://api.deepseek.com/user/balance"]
 
 
-def test_check_balance_fails_on_zero(monkeypatch):
+def test_check_balance_fails_when_not_available(monkeypatch):
     balance_answer(monkeypatch, 200, balance("0.00"))
-    with pytest.raises(summarize_module.BalanceError, match="balance is zero"):
+    with pytest.raises(summarize_module.BalanceError, match="cannot call the API, balance 0.00"):
         summarize_module.check_balance(make_settings())
 
 

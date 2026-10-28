@@ -1,5 +1,7 @@
 import imaplib
 import logging
+import urllib.error
+import urllib.request
 
 import pytest
 from helpers import make_message, make_settings
@@ -129,9 +131,9 @@ def test_start_check_passes_and_sets_ready(monkeypatch):
     monkeypatch.setattr(main.telegram, "check", lambda settings: None)
     monkeypatch.setattr(main.mail, "connect", lambda settings: mailbox)
     monkeypatch.setattr(main, "check_balance", lambda settings: "1.87 USD")
-    monkeypatch.setattr(main.health, "ready", False)
+    monkeypatch.setattr(main, "ready", False)
     main.check_services(make_settings())
-    assert main.health.ready
+    assert main.ready
     assert mailbox.logout_called
 
 
@@ -140,13 +142,33 @@ def test_failed_start_check_exits_with_one_error_line(monkeypatch, caplog):
         raise main.telegram.TelegramError("getChat failed: 401 Unauthorized")
 
     monkeypatch.setattr(main.telegram, "check", check)
-    monkeypatch.setattr(main.health, "ready", False)
+    monkeypatch.setattr(main, "ready", False)
     with caplog.at_level(logging.INFO, logger="kindergarten_email_checker"):
         with pytest.raises(SystemExit) as exit_info:
             main.check_services(make_settings())
     assert exit_info.value.code == 1
-    assert not main.health.ready
+    assert not main.ready
     errors = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
     assert errors == [
         "start check failed (TelegramError: getChat failed: 401 Unauthorized), exiting"
     ]
+
+
+def get(server, path):
+    try:
+        return urllib.request.urlopen(f"http://127.0.0.1:{server.server_port}{path}").status
+    except urllib.error.HTTPError as error:
+        return error.code
+
+
+def test_readyz_only_after_the_start_check(monkeypatch):
+    monkeypatch.setattr(main, "ready", False)
+    server = main.start_health(make_settings(health_port=0))
+    try:
+        assert get(server, "/readyz") == 503
+        assert get(server, "/livez") == 200
+        assert get(server, "/other") == 404
+        monkeypatch.setattr(main, "ready", True)
+        assert get(server, "/readyz") == 200
+    finally:
+        server.shutdown()
