@@ -24,7 +24,7 @@ kubectl -n kindergarten logs -f deployment/kindergarten-email-checker
 
 ## Health checks
 
-At start, the app checks Telegram, Gmail and DeepSeek. Telegram must accept the bot token and find the group. Gmail must accept the app password. DeepSeek must accept the API key, and the balance must be above zero. The app does not poll the mailbox before all three checks pass. The log line of a passed check shows the DeepSeek balance. After a failed check, the app writes one error line and stops. Docker or Kubernetes starts it again, with a longer delay after each failure. On Kubernetes, the pod status is then `CrashLoopBackOff`.
+At start, the app checks Telegram, Gmail and DeepSeek. Telegram must accept the bot token and find the group. Gmail must accept the app password. DeepSeek must accept the API key and report that the account can call the API. With a zero balance, it cannot. The app does not poll the mailbox before all three checks pass. The log line of a passed check shows the DeepSeek balance. After a failed check, the app writes one error line and stops. Docker or Kubernetes starts it again, with a longer delay after each failure. On Kubernetes, the pod status is then `CrashLoopBackOff`.
 
 On Kubernetes, two probes call an HTTP server in the app, port 8080:
 

@@ -11,7 +11,6 @@ import base64
 import json
 import logging
 from datetime import date, datetime
-from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo
@@ -78,7 +77,10 @@ class BalanceError(Exception):
 
 
 def check_balance(settings: Settings) -> str:
-    """GET /user/balance. Fails on a wrong key or a zero balance. Returns the balance as text."""
+    """GET /user/balance. Fails on a wrong key or when the account cannot call the API.
+
+    Returns the balance as text, one entry per currency.
+    """
     response = httpx2.get(
         httpx2.URL(settings.llm_base_url).join("/user/balance"),
         headers={"Authorization": f"Bearer {settings.llm_api_key}"},
@@ -88,14 +90,10 @@ def check_balance(settings: Settings) -> str:
     if response.status_code != 200:
         message = data.get("error", {}).get("message")
         raise BalanceError(f"user/balance failed: {response.status_code} {message}")
-    balances = [
-        f"{info['total_balance']} {info['currency']}"
-        for info in data["balance_infos"]
-        if Decimal(info["total_balance"]) > 0
-    ]
-    if not balances:
-        raise BalanceError("the DeepSeek balance is zero")
-    return ", ".join(balances)
+    balances = ", ".join(f"{i['total_balance']} {i['currency']}" for i in data["balance_infos"])
+    if not data["is_available"]:
+        raise BalanceError(f"DeepSeek account cannot call the API, balance {balances}")
+    return balances
 
 
 def make_client(settings: Settings) -> anthropic.Anthropic:

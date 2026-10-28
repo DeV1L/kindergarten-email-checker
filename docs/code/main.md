@@ -60,7 +60,7 @@ The start check. It runs three checks in order:
 |------|----------------------|
 | `telegram.check()` | Wrong bot token, wrong chat id, or the bot is not in the group |
 | `mail.close(mail.connect())` | Wrong app password, or no connection to Gmail. It also creates the state labels |
-| `summarize.check_balance()` | Wrong API key, or the DeepSeek balance is zero |
+| `summarize.check_balance()` | Wrong API key, or DeepSeek reports that the account cannot call the API (`is_available` is `false`), for example with a zero balance |
 
 `mail.close(mail.connect())` tests the Gmail login only. `mail.connect()` logs in and creates the missing state labels. `mail.close()` logs out at once, because each poll opens its own connection. A failed login stops the check. A failed logout does not, because `mail.close()` ignores errors.
 

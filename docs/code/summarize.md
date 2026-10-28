@@ -66,7 +66,7 @@ Returns the definition of the one tool in the request: the name `LLM_TOOL_NAME`,
 
 ### `BalanceError`
 
-An exception class for a failed balance check. Why it is a class: `main.check_services()` writes the exception type name in its error line. `BalanceError: the DeepSeek balance is zero` is clearer than a general `Exception`. The class has no body.
+An exception class for a failed balance check. Why it is a class: `main.check_services()` writes the exception type name in its error line. `BalanceError: DeepSeek account cannot call the API` is clearer than a general `Exception`. The class has no body.
 
 ### `check_balance(settings) -> str`
 
@@ -75,9 +75,9 @@ Sends `GET /user/balance` to DeepSeek. The request is free.
 1. Builds the URL from `LLM_BASE_URL`. `httpx2.URL.join("/user/balance")` replaces the path, so `https://api.deepseek.com/anthropic` gives `https://api.deepseek.com/user/balance`.
 2. Sends the API key in the `Authorization: Bearer` header. The timeout is `LLM_BALANCE_TIMEOUT_SECONDS`.
 3. When the status is not 200, raises `BalanceError` with the status and the error message from DeepSeek. A wrong key gives 401.
-4. Keeps the currencies with a balance above zero. `Decimal` compares the values, because DeepSeek sends them as text.
-5. When no currency is left, raises `BalanceError`.
-6. Returns the balances as text, for example `4.20 USD`. `main.check_services()` writes this to the log.
+4. Joins the balances of all currencies as text, for example `4.20 USD`. `balance_infos` has one entry for each currency on the account: CNY, USD or both.
+5. When `is_available` is `false`, raises `BalanceError` with the balances. DeepSeek sets this field: `false` means that the account cannot call the API now, for example with a zero balance.
+6. Returns the balances. `main.check_services()` writes them to the log.
 
 ### `make_client(settings) -> anthropic.Anthropic`
 
@@ -166,6 +166,8 @@ The system prompt, in English. It tells the model:
 - to ignore signatures, legal footers and logos;
 - what to do with an email without content, for example "log in to the platform".
 
+The instruction to call the tool is the only thing that makes the model call it. The request cannot force the call: DeepSeek rejects a forced `tool_choice` when thinking is on, so the request uses `auto`. "Exactly once" matters because `summarize()` reads only the first call. "Not in prose" matters because the app ignores text blocks. An answer without the call is unusable and gets the retry turn "Call the report_summary tool."
+
 `{TOOL_NAME}` is the only placeholder. The prompt names the timezone `America/Argentina/Buenos_Aires` in plain text. When `TZ` changes, the prompt still names the old timezone. The `Sent` line of the user turn names the timezone from `TZ`.
 
 ## Constants, limits and flags
@@ -185,7 +187,7 @@ The system prompt, in English. It tells the model:
 
 | Situation | Result |
 |-----------|--------|
-| `check_balance()`: wrong key, zero balance, no connection | Exception to `main.check_services()`. Exit code 1 |
+| `check_balance()`: wrong key, `is_available` is `false`, no connection | Exception to `main.check_services()`. Exit code 1 |
 | `summarize()`: `LLM_MODEL_TRIES` unusable answers | Returns `None`. Not an error |
 | `summarize()`: timeout, 429, 5xx after the SDK retries, 4xx | Exception to `main.process()`. One failed attempt |
 
@@ -200,5 +202,5 @@ The system prompt, in English. It tells the model:
 - the number of model calls comes from `LLM_MODEL_TRIES`;
 - the text "null" means no value and needs no retry;
 - the tool schema matches the `Summary` model;
-- the balance check: a balance above zero, a zero balance, a wrong key;
+- the balance check: an available account, `is_available` is `false`, a wrong key;
 - the system prompt names the tool.

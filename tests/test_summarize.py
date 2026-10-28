@@ -163,9 +163,9 @@ def test_check_balance_returns_the_balance(monkeypatch):
     assert calls == ["https://api.deepseek.com/user/balance"]
 
 
-def test_check_balance_fails_on_zero(monkeypatch):
+def test_check_balance_fails_when_not_available(monkeypatch):
     balance_answer(monkeypatch, 200, balance("0.00"))
-    with pytest.raises(summarize_module.BalanceError, match="balance is zero"):
+    with pytest.raises(summarize_module.BalanceError, match="cannot call the API, balance 0.00"):
         summarize_module.check_balance(make_settings())
 
 
