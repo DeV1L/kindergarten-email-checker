@@ -153,6 +153,32 @@ The PDF sections and the last two lines are present only when they have content.
 
 After the text block, there is one `image` block for each item in `content.images`, as base64.
 
+The diagram shows how `EmailContent` becomes the content blocks, and what the request to DeepSeek contains:
+
+```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 420}}}%%
+flowchart LR
+    EC["<b>EmailContent</b><br/>sender<br/>subject<br/>sent_at<br/>text<br/>pdf_texts<br/>not_sent_to_model<br/>images<br/>uid"]
+    CLOCK["current date in TZ"]
+    LOG["log lines only,<br/>not sent"]
+
+    TB["<b>Text block</b>, type text: one string<br/><br/>From: <i>sender</i><br/>Subject: <i>subject</i><br/>Sent: <i>sent_at</i>, weekday (TZ)<br/>Today: <i>current date</i>, weekday<br/><br/>Body:<br/><i>text</i>, or (empty)<br/><br/>PDF attachment <i>file name</i>:<br/><i>PDF text</i><br/>one section for each entry of pdf_texts<br/><br/>Attachments not shown to you: <i>not_sent_to_model</i><br/>only when the list is not empty<br/><br/>Images from attachments and scanned PDF pages follow.<br/>only when there are images"]
+
+    IB["<b>Image blocks</b>, type image<br/>one for each entry of images<br/><br/>source: type base64,<br/><i>media type</i>, <i>bytes</i> as base64"]
+
+    REQ["<b>Request: client.messages.create()</b><br/><br/>model: LLM_MODEL<br/>max_tokens: LLM_MAX_TOKENS<br/>system: prompt.md, TOOL_NAME replaced<br/>messages: one user turn = text block + image blocks<br/>on a retry: + previous answer + retry turn<br/>tools: report_summary, input_schema from Summary<br/>tool_choice: auto<br/>thinking: enabled<br/>output_config: effort LLM_EFFORT"]
+
+    D["<b>DeepSeek</b><br/>Anthropic Messages API<br/>LLM_BASE_URL"]
+
+    EC -->|"sender, subject, sent_at,<br/>text, pdf_texts,<br/>not_sent_to_model"| TB
+    CLOCK --> TB
+    EC -->|images| IB
+    EC -.->|uid| LOG
+    TB --> REQ
+    IB --> REQ
+    REQ -->|HTTPS| D
+```
+
 ### `prompt.md`
 
 The system prompt, in English. It tells the model:
