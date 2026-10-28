@@ -128,6 +128,42 @@ Each problem gives one log line: `uid=<uid> attempt <n>: <JSON object>`. The obj
 
 After `LLM_MODEL_TRIES` problems, the function returns `None`. `main.process()` then posts the original text. API errors are not caught: they go to `main.process()`, which counts a failed attempt.
 
+The result is a `Summary` object. The `anthropic` SDK parses the JSON answer, so `tool_use.input` is already a `dict`. `Summary.model_validate()` turns this `dict` into the `Summary` object with typed fields: `deadline` and `event_date` are `datetime.date` objects, not text. `telegram.py` reads the attributes of this object.
+
+The diagram shows the whole call: how `EmailContent` becomes the request, and how the answer becomes the `Summary` object:
+
+```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 420}}}%%
+flowchart TD
+    EC["<b>EmailContent</b><br/>sender<br/>subject<br/>sent_at<br/>text<br/>pdf_texts<br/>not_sent_to_model<br/>images<br/>uid"]
+    CLOCK["current date in TZ"]
+    LOG["log lines only,<br/>not sent"]
+
+    TB["<b>Text block</b>, type text: one string<br/><br/>From: <i>sender</i><br/>Subject: <i>subject</i><br/>Sent: <i>sent_at</i>, weekday (TZ)<br/>Today: <i>current date</i>, weekday<br/><br/>Body:<br/><i>text</i>, or (empty)<br/><br/>PDF attachment <i>file name</i>:<br/><i>PDF text</i><br/>one section for each entry of pdf_texts<br/><br/>Attachments not shown to you: <i>not_sent_to_model</i><br/>only when the list is not empty<br/><br/>Images from attachments and scanned PDF pages follow.<br/>only when there are images"]
+
+    IB["<b>Image blocks</b>, type image<br/>one for each entry of images<br/><br/>source: type base64,<br/><i>media type</i>, <i>bytes</i> as base64"]
+
+    REQ["<b>Request: client.messages.create()</b><br/><br/>model: LLM_MODEL<br/>max_tokens: LLM_MAX_TOKENS<br/>system: prompt.md, TOOL_NAME replaced<br/>messages: one user turn = text block + image blocks<br/>on a retry: + previous answer + retry turn<br/>tools: report_summary, input_schema from Summary<br/>tool_choice: auto<br/>thinking: enabled<br/>output_config: effort LLM_EFFORT"]
+
+    D["<b>DeepSeek</b><br/>Anthropic Messages API<br/>LLM_BASE_URL"]
+
+    EC -->|"sender, subject, sent_at,<br/>text, pdf_texts,<br/>not_sent_to_model"| TB
+    CLOCK --> TB
+    EC -->|images| IB
+    EC -.->|uid| LOG
+    TB --> REQ
+    IB --> REQ
+    REQ -->|HTTPS| D
+
+    RESP["<b>Response</b>: response.content<br/><br/>thinking blocks<br/>tool_use block: name report_summary,<br/><i>input</i>: dict, already parsed from JSON by the SDK"]
+    SUM["<b>Summary</b> object<br/><br/>title_ru: str<br/>summary_ru: str<br/>urgency: low, medium or high<br/>category: one of 7 values<br/>action_ru: str or None<br/>deadline: date or None<br/>event_date: date or None<br/>event_time: str or None"]
+    RETRY["unusable answer:<br/>next model try, or None"]
+
+    D -->|"JSON over HTTPS"| RESP
+    RESP -->|"Summary.model_validate(input)"| SUM
+    RESP -.-> RETRY
+```
+
 ### `user_content(content, settings) -> list[dict]`
 
 Builds the content of the user turn. The first block is text:
@@ -153,31 +189,7 @@ The PDF sections and the last two lines are present only when they have content.
 
 After the text block, there is one `image` block for each item in `content.images`, as base64.
 
-The diagram shows how `EmailContent` becomes the content blocks, and what the request to DeepSeek contains:
-
-```mermaid
-%%{init: {"flowchart": {"wrappingWidth": 420}}}%%
-flowchart LR
-    EC["<b>EmailContent</b><br/>sender<br/>subject<br/>sent_at<br/>text<br/>pdf_texts<br/>not_sent_to_model<br/>images<br/>uid"]
-    CLOCK["current date in TZ"]
-    LOG["log lines only,<br/>not sent"]
-
-    TB["<b>Text block</b>, type text: one string<br/><br/>From: <i>sender</i><br/>Subject: <i>subject</i><br/>Sent: <i>sent_at</i>, weekday (TZ)<br/>Today: <i>current date</i>, weekday<br/><br/>Body:<br/><i>text</i>, or (empty)<br/><br/>PDF attachment <i>file name</i>:<br/><i>PDF text</i><br/>one section for each entry of pdf_texts<br/><br/>Attachments not shown to you: <i>not_sent_to_model</i><br/>only when the list is not empty<br/><br/>Images from attachments and scanned PDF pages follow.<br/>only when there are images"]
-
-    IB["<b>Image blocks</b>, type image<br/>one for each entry of images<br/><br/>source: type base64,<br/><i>media type</i>, <i>bytes</i> as base64"]
-
-    REQ["<b>Request: client.messages.create()</b><br/><br/>model: LLM_MODEL<br/>max_tokens: LLM_MAX_TOKENS<br/>system: prompt.md, TOOL_NAME replaced<br/>messages: one user turn = text block + image blocks<br/>on a retry: + previous answer + retry turn<br/>tools: report_summary, input_schema from Summary<br/>tool_choice: auto<br/>thinking: enabled<br/>output_config: effort LLM_EFFORT"]
-
-    D["<b>DeepSeek</b><br/>Anthropic Messages API<br/>LLM_BASE_URL"]
-
-    EC -->|"sender, subject, sent_at,<br/>text, pdf_texts,<br/>not_sent_to_model"| TB
-    CLOCK --> TB
-    EC -->|images| IB
-    EC -.->|uid| LOG
-    TB --> REQ
-    IB --> REQ
-    REQ -->|HTTPS| D
-```
+The diagram in the `summarize()` section shows these blocks in the request.
 
 ### `prompt.md`
 
