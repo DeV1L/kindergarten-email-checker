@@ -46,7 +46,57 @@ A dataclass that holds everything the later steps need from one email:
 
 Why it is a class: three modules share this record, and each reads different fields. A dataclass gives named, typed fields and empty lists as defaults. It is not a pydantic model, because the code fills it and no outside data needs validation. It has no methods.
 
-The `MailMessage` from `imap-tools` is not passed on. After `extract()`, only `EmailContent` reaches the model and Telegram.
+`summarize()` and the Telegram functions get only `EmailContent`, never the raw `MailMessage` from `imap-tools`. So `extract()` is the only place that reads the body and the attachments, and applies the limits.
+
+The diagram shows how `extract()` fills each field of `EmailContent` from the fields of `MailMessage`:
+
+```mermaid
+flowchart LR
+    subgraph MM ["MailMessage, from imap-tools"]
+        m_uid["uid: str"]
+        m_from["from_: str"]
+        m_subject["subject: str"]
+        m_date["date: datetime"]
+        m_text["text: str<br/>the text/plain part"]
+        m_html["html: str<br/>the text/html part"]
+        m_att["attachments: list of MailAttachment<br/>each: filename, content_type, payload bytes"]
+        m_rest["not read: to, cc, bcc, reply_to,<br/>headers, flags, size"]
+    end
+
+    T["body_text()<br/>text, or html2text(html) when text is empty<br/>3+ blank lines to 2<br/>cut at MAX_BODY_CHARS + [текст обрезан]"]
+    A{"each attachment<br/>guess_media_type()"}
+    P{"PDF<br/>pdf_to_text_or_images()"}
+    X["skipped:<br/>not named, not sent"]
+
+    subgraph EC ["EmailContent, from content.py"]
+        e_uid["uid: str"]
+        e_sender["sender: str"]
+        e_subject["subject: str"]
+        e_sent["sent_at: datetime"]
+        e_text["text: str"]
+        e_names["attachment_names: list of str"]
+        e_img["images: list of (media type, bytes)"]
+        e_pdf["pdf_texts: list of (file name, text)"]
+        e_ns["not_sent_to_model: list of str"]
+    end
+
+    m_uid -->|as is| e_uid
+    m_from -->|as is| e_sender
+    m_subject -->|"empty: (без темы)"| e_subject
+    m_date -->|"year before 2000: now<br/>converted to TZ"| e_sent
+    m_text --> T
+    m_html --> T
+    T --> e_text
+    m_att --> A
+    A -->|"image under MIN_IMAGE_BYTES"| X
+    A -->|"every other file: its name"| e_names
+    A -->|"JPEG, PNG, GIF, WebP: bytes as is"| e_img
+    A -->|"PDF"| P
+    A -->|"over MAX_ATTACHMENT_MB,<br/>or another type: its name"| e_ns
+    P -->|"scan: first MAX_PDF_PAGES_RENDERED<br/>pages as PNG"| e_img
+    P -->|"text layer: text,<br/>cut at MAX_PDF_TEXT_CHARS"| e_pdf
+    P -->|"cannot read: its name"| e_ns
+```
 
 ### `extract(message, settings) -> EmailContent`
 
