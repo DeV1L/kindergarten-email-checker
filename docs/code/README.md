@@ -45,7 +45,7 @@ The processing of one email is a pipeline of pure transformations with two side 
 
 | Step | Function | Input | Output |
 |------|----------|-------|--------|
-| 1. Fetch | `mail.fetch_unseen()` | The inbox label | `list[MailMessage]` |
+| 1. Fetch | `mail.fetch_unseen()` | The inbox label | `Iterator[MailMessage]`, one email at a time |
 | 2. Filter | `Settings.sender_allowed()` | The From address | `bool` |
 | 3. Extract | `content.extract()` | `MailMessage` | `EmailContent` |
 | 4. Build the request | `summarize.user_content()` | `EmailContent` | Content blocks: one text block and zero or more image blocks |
@@ -64,7 +64,7 @@ The diagram shows how one email moves through the modules. Each arrow carries th
 flowchart TD
     ENV[".env file or environment variables"] -->|"Settings()"| S["config.Settings<br/>passed to every function"]
 
-    G[("Dedicated mailbox<br/>INBOX, unseen")] -->|"mail.fetch_unseen()<br/>list[MailMessage]"| P{"main.process()<br/>sender_allowed()?"}
+    G[("Dedicated mailbox<br/>INBOX, unseen")] -->|"mail.fetch_unseen()<br/>one MailMessage at a time"| P{"main.process()<br/>sender_allowed()?"}
     P -->|no| IG["mail.move()<br/>label Ignored"]
     P -->|"yes: MailMessage"| X["content.extract()<br/>body to text, PDF to text or PNG pages,<br/>photos, attachment names"]
     X -->|EmailContent| U["summarize.user_content()<br/>metadata + body + PDF texts as text,<br/>images as base64"]

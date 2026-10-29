@@ -80,7 +80,7 @@ One poll:
 
 1. Connects with `mail.connect()`.
 2. Writes a `DEBUG` line. At `INFO`, a poll without new email writes nothing.
-3. Fetches all unseen emails with `mail.fetch_unseen()` and calls `process()` for each.
+3. Fetches the unseen emails with `mail.fetch_unseen()`, one at a time, and calls `process()` for each.
 4. In `finally`: logs out with `mail.close()`, when the connection exists.
 
 Error handling:
