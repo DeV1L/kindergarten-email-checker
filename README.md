@@ -19,9 +19,10 @@ Gmail labels are the only state: `INBOX` is the queue; `Processed`, `Ignored` an
 | `src/kindergarten_email_checker/` | The Python package and the system prompt |
 | `tests/` | Unit tests (pytest) |
 | `charts/kindergarten-email-checker/` | The Helm chart for Kubernetes |
-| `compose.yaml` | The Docker Compose file for the VPS |
+| `compose.yaml` | The Docker Compose file for a VPS |
 | `Dockerfile` | The container image |
 | `.env.example` | The template for `.env`, with every setting |
+| `requirements.txt` | The lock file |
 | `docs/` | Documentation |
 | `.github/workflows/` | The CI workflow and the deploy workflow |
 | `AGENTS.md` | Rules for AI agents |

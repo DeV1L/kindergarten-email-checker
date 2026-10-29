@@ -9,9 +9,9 @@ RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --create-home --shell /usr/sbin/nologin app
 
 WORKDIR /app
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md requirements.txt ./
 COPY src ./src
-RUN pip install .
+RUN pip install -r requirements.txt && pip install --no-deps .
 
 USER app
 CMD ["python", "-m", "kindergarten_email_checker"]

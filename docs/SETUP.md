@@ -113,7 +113,7 @@ Choose one deployment option:
 | Docker Compose | A VPS | Pulled from ghcr.io |
 | Kubernetes | A cluster, with the Helm chart | Pulled from ghcr.io |
 
-CI builds the image `ghcr.io/dev1l/kindergarten-email-checker` from the `Dockerfile` and pushes it. The image is public, so a pull needs no login. The image is based on `python:3.13-slim`. pip installs the dependencies from `pyproject.toml`. The app runs as the non-root user `app` (id 10001). The image tags are in "CI pipeline" in the [operations guide](OPERATIONS.md).
+CI builds the image `ghcr.io/dev1l/kindergarten-email-checker` from the `Dockerfile` and pushes it. The image is public, so a pull needs no login. The image is based on `python:3.13-slim`. pip installs the dependencies from the lock file `requirements.txt`, so each build gets the same versions. The app runs as the non-root user `app` (id 10001). The image tags are in "CI pipeline" in the [operations guide](OPERATIONS.md).
 
 CAUTION: run only one instance of the app for each mailbox. Two instances read the same emails, and one email gets two posts. Before you start a second instance for a test, stop the first one, or use a different mailbox and group.
 
@@ -162,6 +162,12 @@ pytest
 
 ```bash
 python -m kindergarten_email_checker
+```
+
+The lock file `requirements.txt` pins the dependencies of the image. `pyproject.toml` holds the version ranges. After a change to the dependencies in `pyproject.toml`, create the lock file again and commit it:
+
+```bash
+uvx uv pip compile pyproject.toml --python-version 3.13 --generate-hashes --no-header -o requirements.txt
 ```
 
 To test the image, build it and run it with the same `.env`:
