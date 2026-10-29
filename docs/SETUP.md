@@ -99,7 +99,7 @@ The other variables have defaults:
 | `MAX_ATTACHMENT_MB` | `10` | The app does not send larger attachments to the model. The post still lists their names |
 | `MAX_RETRIES_PER_MESSAGE` | `3` | Attempts before the app moves an email to `Failed` |
 | `TZ` | `America/Argentina/Buenos_Aires` | Timezone for the dates in emails and posts |
-| `LOG_LEVEL` | `INFO` | Log level of the app and all libraries. At `INFO` and `DEBUG`, the log shows the URL of each Telegram request. This URL contains the bot token |
+| `LOG_LEVEL` | `INFO` | Log level of the app and all libraries. |
 | `HEALTH_PORT` | `8080` | Port of the health checks `/readyz` and `/livez`. On Kubernetes, the chart value `healthPort` sets it |
 | `IMAGE_TAG` | `latest` | The image tag. Only Docker Compose reads it |
 
@@ -113,7 +113,7 @@ Choose one deployment option:
 | Docker Compose | A VPS | Pulled from ghcr.io |
 | Kubernetes | A cluster, with the Helm chart | Pulled from ghcr.io |
 
-CI builds the image `ghcr.io/dev1l/kindergarten-email-checker` from the `Dockerfile` and pushes it. The image is public, so a pull needs no login. The image is based on `python:3.13-slim`. pip installs the dependencies from `pyproject.toml`. The app runs as the non-root user `app` (id 10001). The image tags are in "CI pipeline" in the [operations guide](OPERATIONS.md).
+CI builds the image `ghcr.io/dev1l/kindergarten-email-checker` from the `Dockerfile` and pushes it. The image is public, so a pull needs no login. The image is based on `python:3.13-slim`. pip installs the dependencies from the lock file `requirements.txt`, so each build gets the same versions. The app runs as the non-root user `app` (id 10001). The image tags are in "CI pipeline" in the [operations guide](OPERATIONS.md).
 
 CAUTION: run only one instance of the app for each mailbox. Two instances read the same emails, and one email gets two posts. Before you start a second instance for a test, stop the first one, or use a different mailbox and group.
 
@@ -164,6 +164,12 @@ pytest
 python -m kindergarten_email_checker
 ```
 
+The lock file `requirements.txt` pins the dependencies of the image. `pyproject.toml` holds the version ranges. After a change to the dependencies in `pyproject.toml`, create the lock file again and commit it:
+
+```bash
+uvx uv pip compile pyproject.toml --python-version 3.13 --generate-hashes --no-header -o requirements.txt
+```
+
 To test the image, build it and run it with the same `.env`:
 
 1. Build the image:
@@ -186,6 +192,7 @@ The VPS needs only `compose.yaml` and `.env`. It pulls the image and does not bu
 |---------|-------|
 | Image | `ghcr.io/dev1l/kindergarten-email-checker`, with the tag from `IMAGE_TAG` |
 | Restart | `unless-stopped`: Docker starts the container again after a crash or a reboot |
+| Stop grace period | 180 seconds. On `docker stop`, the app finishes the current email and exits. Docker kills the container only after this time |
 | Root filesystem | Read-only, with a tmpfs at `/tmp` |
 | Memory limit | 256 MB |
 | Logs | json-file, rotated at 3 files of 10 MB |
@@ -234,6 +241,7 @@ The Helm chart is in [charts/kindergarten-email-checker](../charts/kindergarten-
 | Pull policy | `Always`. Each `helm upgrade` replaces the pod, so the new pod pulls the image again |
 | User | 10001, non-root |
 | Security | Read-only root filesystem, no capabilities, no privilege escalation, no service account token |
+| Stop grace period | `terminationGracePeriodSeconds`, default 180. On a pod deletion, the app finishes the current email and exits. Kubernetes kills the container only after this time |
 | Health checks | A readiness probe on `/readyz` and a liveness probe on `/livez`, port 8080. The chart values `readinessPeriodSeconds` (default 10) and `livenessPeriodSeconds` (default 60) set how often they run. Read "Health checks" in the [operations guide](OPERATIONS.md) |
 | Resources | Memory request and limit 128 MiB, CPU request 50m |
 | Settings | All variables come from an existing secret, `existingSecret` in the chart values, default `kindergarten-email-checker`. The chart does not create or hold secrets. `env` in the chart values overrides single variables |

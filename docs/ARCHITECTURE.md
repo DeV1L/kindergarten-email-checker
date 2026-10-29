@@ -57,9 +57,10 @@ The [code walkthrough](code/README.md) describes each module in detail: its func
 
 1. At start: check Telegram, Gmail and DeepSeek. Telegram `getChat` checks the bot token and the group. A Gmail login checks the app password. DeepSeek `GET /user/balance` checks the API key and that the account can call the API: the field `is_available` must be `true`. This request is free. On failure: one error line, then the app stops with exit code 1. Docker or Kubernetes starts it again, with a longer delay after each failure. The app does not poll before all checks pass, because otherwise every email would fail and end in `Failed`.
 2. Forever: poll the mailbox, then wait `POLL_MINUTES`. The first poll runs after the start check.
-3. A poll opens a new IMAP connection, creates the state labels if missing, processes everything unseen and logs out.
+3. A poll opens a new IMAP connection, creates the state labels if missing, processes everything unseen and logs out. It fetches one email at a time, so one email with its attachments is in memory at a time. A backlog of photo emails does not grow the memory of the container.
 4. An IMAP error ends the poll. The app closes the connection, and the next poll tries again. A failed or dropped connection (IMAP abort, socket, SSL or timeout error) gets one warning line without a traceback. Any other IMAP error gets a full traceback. The logout after a dropped connection fails too; that error is ignored. The loop never exits on its own.
 5. Socket timeouts on IMAP and HTTP calls, so a stalled connection cannot block the loop.
+6. `SIGTERM` or `SIGINT` stops the loop after the current email. The app finishes the model call, the post and the move, then logs out and exits with code 0. The remaining unseen emails wait for the next start. The stop grace period is 180 seconds in the Compose file and in the chart, enough for one model call with one retry and the post.
 
 The app does not use IMAP IDLE. IDLE needs a connection that stays open. Gmail and the network close such a connection a few times each day, and each drop writes a warning line. With a new connection for each poll, a drop is rare. The cost is a delay: a new email waits up to `POLL_MINUTES` for its post.
 
@@ -170,7 +171,7 @@ Rules:
 - Attachments: one line with the file names, except skipped small images. The files themselves are not sent.
 - Footer: subject, sender and the date the email was sent, with the year and time, in the `TZ` timezone. For a manual forward, this is the date of the forward.
 - Fallback post when the model output is unusable: `⚠️ Без сводки`, the attachment names and the original text in an expandable quote. This is the only post that quotes the email, because it has no summary. Telegram's limit is 4096 characters, so the original is trimmed to fit and ends with `…`.
-- Log: one level, `LOG_LEVEL`, for the app and all libraries. The app and the Anthropic SDK send HTTP requests with the library `httpx2`. At `INFO`, `httpx2` logs the URL of each request. Telegram URLs contain the bot token, so the log shows the token. The app runs in a homelab, so this is accepted. Telegram error messages are built without the URL.
+- Log: one level, `LOG_LEVEL`, for the app and all libraries. The app and the Anthropic SDK send HTTP requests with the library `httpx2`. At `INFO`, `httpx2` logs the URL of each request. Telegram URLs contain the bot token, so the log formatter replaces it in every line, tracebacks included: the path reads `/bot<token>/`. Telegram error messages are built without the URL.
 - Error post: `⚠️ Не удалось обработать письмо «subject»: error`, at most once per email. The error text is trimmed at `TELEGRAM_MAX_ERROR_CHARS` characters, default 500.
 
 ## Failure handling
@@ -184,6 +185,7 @@ IMAP errors are described in "Runtime loop".
 | Telegram error | Attempt counter +1, email stays unseen |
 | Attempts exhausted | Moved to `Failed`, error posted once |
 | Process crash | Docker or Kubernetes restarts it. Nothing is lost because the state lives in Gmail |
+| Stop: `docker stop`, a pod deletion, Ctrl+C | The app finishes the current email and exits with code 0. A stop between the post and the move cannot happen, so a stop never gives a duplicate post |
 | Wrong credentials or no connection at start | The app stops before the first poll. Docker or Kubernetes starts it again, with a longer delay after each failure. On Kubernetes, the pod is not ready. During an update, the old pod keeps working |
 | HTTP server of the health checks does not answer | Kubernetes restarts the container (liveness probe). Docker Compose has no health check |
 
@@ -199,4 +201,4 @@ Health checks on Kubernetes call a small HTTP server in the app, port 8080. The 
 
 The workflow **Deploy** in GitHub Actions runs `helm upgrade --install` with the chart of the selected branch. The image tag is `latest`, or a tag that the owner enters. The pod template has an annotation with a random value, so each upgrade replaces the pod, and the new pod pulls the tag again. With `--wait`, the workflow fails when the pod is not ready in 5 minutes, for example with wrong credentials.
 
-The chart uses the `RollingUpdate` strategy with `maxSurge` 1 and `maxUnavailable` 0. On an update, the old pod runs until the new pod is ready. A new pod with wrong credentials stops before its first poll, so the old pod keeps working. After a successful start check, both pods poll for a short time: until the next readiness probe, at most `readinessPeriodSeconds` seconds (a chart value, default 10), and the stop of the old pod. An email that arrives in this time can get two posts. The workflow runs only when the owner starts it.
+The chart uses the `RollingUpdate` strategy with `maxSurge` 1 and `maxUnavailable` 0. On an update, the old pod runs until the new pod is ready. A new pod with wrong credentials stops before its first poll, so the old pod keeps working. After a successful start check, both pods poll for a short time: until the next readiness probe, at most `readinessPeriodSeconds` seconds (a chart value, default 10), and the stop of the old pod. An email that arrives in this time can get two posts. The old pod finishes the email it is working on before it exits. The workflow runs only when the owner starts it.

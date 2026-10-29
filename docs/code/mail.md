@@ -54,7 +54,7 @@ Creates each label that does not exist. In Gmail, an IMAP folder is a label. The
 
 Logs out. It ignores every error, because after a dropped connection the logout fails too. `main.poll()` calls it in `finally`.
 
-### `fetch_unseen(mailbox) -> list[MailMessage]`
+### `fetch_unseen(mailbox) -> Iterator[MailMessage]`
 
 Fetches every email without the Seen flag in the selected label.
 
@@ -62,9 +62,11 @@ Fetches every email without the Seen flag in the selected label.
 |----------|-------|-----|
 | Search | `AND(seen=False)` | Only unseen emails are the queue |
 | `mark_seen` | `False` | The fetch does not change the state |
-| `bulk` | `True` | One `FETCH` command for all emails, not one for each email |
+| `bulk` | `False` | One `FETCH` command for each email, not one for all emails |
 
-The function returns a list, not a generator. All unseen emails, with their attachments, are in memory at the same time.
+The function returns a generator, not a list. `imap-tools` first gets the UIDs of the unseen emails with one `SEARCH` command. Then it fetches one email when `main.poll()` asks for the next one. So one email, with its attachments, is in memory at a time. The previous email is freed when `process()` returns.
+
+Moving the current email during the loop is safe, because the fetch uses the UIDs from the search, not sequence numbers.
 
 CAUTION: when the owner opens an email of the inbox label in the Gmail web interface, Gmail sets the Seen flag. The app then skips this email, and it stays in the inbox label. To process it again, mark it as unread in Gmail.
 
@@ -95,7 +97,4 @@ A wrong app password raises `imap_tools.errors.MailboxLoginError`.
 
 ## Tests
 
-`tests/test_mail.py` uses a fake `MailBox`. It covers:
-
-- `ensure_labels()` creates only the missing labels;
-- `refresh_capabilities()` picks up `MOVE` from the answer after login.
+`tests/test_mail.py` uses a fake `MailBox`. It covers one case: `refresh_capabilities()` picks up `MOVE` from the answer after login.

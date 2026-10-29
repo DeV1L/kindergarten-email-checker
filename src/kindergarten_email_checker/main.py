@@ -3,6 +3,8 @@
 At start: check Telegram, Gmail and DeepSeek. Stop when one of them fails.
 Then every POLL_MINUTES: connect, process every unseen email, log out.
 An IMAP error ends the poll. The next poll tries again.
+SIGTERM or SIGINT stops the loop after the current email, so a stop cannot fall between the
+Telegram post and the move. The process then exits with code 0.
 
 An HTTP server in a daemon thread answers the Kubernetes probes:
 GET /readyz answers 200 after the start check, GET /livez answers 200 while the process runs.
@@ -12,6 +14,8 @@ from __future__ import annotations
 
 import imaplib
 import logging
+import re
+import signal
 import sys
 import threading
 import time
@@ -30,17 +34,18 @@ log = logging.getLogger("kindergarten_email_checker")
 # The next poll tries again, so these get one warning line. Any other error gets a traceback.
 CONNECTION_ERRORS = (imaplib.IMAP4.abort, OSError)
 
+BOT_TOKEN = re.compile(r"/bot\d+:[\w-]+/")  # the bot token in a Telegram Bot API URL
+
 ready = False  # /readyz: set by check_services(), read by the HTTP server thread
+stop = threading.Event()  # set by request_stop(); the loop ends after the current email
 
 
 def run() -> int:
     """Console entry point."""
     settings = Settings()  # fails with a readable message when a required variable is missing
-    logging.basicConfig(
-        level=settings.log_level.upper(),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        stream=sys.stdout,
-    )
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(MaskedFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logging.basicConfig(level=settings.log_level.upper(), handlers=[handler])
     log.info(
         "kindergarten-email-checker %s starting: mailbox=%s model=%s poll=%s min",
         __version__,
@@ -48,10 +53,29 @@ def run() -> int:
         settings.llm_model,
         settings.poll_minutes,
     )
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
     start_health(settings)
     check_services(settings)
     loop(settings)
+    log.info("stopped")
     return 0
+
+
+class MaskedFormatter(logging.Formatter):
+    """Replace the Telegram bot token in every log line, tracebacks included.
+
+    httpx2 logs the URL of each request at INFO, and Telegram URLs carry the token in the path.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        return BOT_TOKEN.sub("/bot<token>/", super().format(record))
+
+
+def request_stop(signum: int, frame: object) -> None:
+    """Signal handler: ask the loop to stop. A blocking IMAP or HTTP call finishes first."""
+    log.info("%s received, stopping after the current email", signal.Signals(signum).name)
+    stop.set()
 
 
 def check_services(settings: Settings) -> None:
@@ -74,11 +98,11 @@ def check_services(settings: Settings) -> None:
 
 
 def loop(settings: Settings) -> None:
-    """Run forever: one poll, then a pause of POLL_MINUTES."""
+    """Run until a stop is requested: one poll, then a pause of POLL_MINUTES."""
     attempts: dict[str, int] = {}  # uid -> failed attempts, reset on restart
-    while True:
+    while not stop.is_set():
         poll(settings, attempts)
-        time.sleep(settings.poll_minutes * 60)
+        stop.wait(settings.poll_minutes * 60)  # returns at once when a stop is requested
 
 
 def poll(settings: Settings, attempts: dict[str, int]) -> None:
@@ -88,6 +112,8 @@ def poll(settings: Settings, attempts: dict[str, int]) -> None:
         mailbox = mail.connect(settings)
         log.debug("connected to %s", settings.imap_host)
         for message in mail.fetch_unseen(mailbox):
+            if stop.is_set():
+                break  # the remaining emails wait for the next start
             process(mailbox, message, settings, attempts)
     except CONNECTION_ERRORS as error:
         log.warning(

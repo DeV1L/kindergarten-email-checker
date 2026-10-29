@@ -45,7 +45,7 @@ The processing of one email is a pipeline of pure transformations with two side 
 
 | Step | Function | Input | Output |
 |------|----------|-------|--------|
-| 1. Fetch | `mail.fetch_unseen()` | The inbox label | `list[MailMessage]` |
+| 1. Fetch | `mail.fetch_unseen()` | The inbox label | `Iterator[MailMessage]`, one email at a time |
 | 2. Filter | `Settings.sender_allowed()` | The From address | `bool` |
 | 3. Extract | `content.extract()` | `MailMessage` | `EmailContent` |
 | 4. Build the request | `summarize.user_content()` | `EmailContent` | Content blocks: one text block and zero or more image blocks |
@@ -64,7 +64,7 @@ The diagram shows how one email moves through the modules. Each arrow carries th
 flowchart TD
     ENV[".env file or environment variables"] -->|"Settings()"| S["config.Settings<br/>passed to every function"]
 
-    G[("Dedicated mailbox<br/>INBOX, unseen")] -->|"mail.fetch_unseen()<br/>list[MailMessage]"| P{"main.process()<br/>sender_allowed()?"}
+    G[("Dedicated mailbox<br/>INBOX, unseen")] -->|"mail.fetch_unseen()<br/>one MailMessage at a time"| P{"main.process()<br/>sender_allowed()?"}
     P -->|no| IG["mail.move()<br/>label Ignored"]
     P -->|"yes: MailMessage"| X["content.extract()<br/>body to text, PDF to text or PNG pages,<br/>photos, attachment names"]
     X -->|EmailContent| U["summarize.user_content()<br/>metadata + body + PDF texts as text,<br/>images as base64"]
@@ -152,16 +152,15 @@ sequenceDiagram
 
 ## Exit codes
 
-The process never stops on its own after the start check. These are all the ways it ends:
+After the start check, the process stops only on a signal. These are all the ways it ends:
 
 | Exit code | Cause | Log output |
 |-----------|-------|------------|
-| 0 | `run()` returns 0. This does not happen in practice, because `loop()` does not return | None |
+| 0 | `SIGTERM` or `SIGINT`: `docker stop`, a pod deletion, Ctrl+C in a local run. `request_stop()` sets `stop`, `loop()` returns after the current email, `run()` returns 0 | One line: `SIGTERM received, stopping after the current email`, then `stopped` |
 | 1 | The start check fails: Telegram, Gmail or DeepSeek. `check_services()` raises `SystemExit(1)` | One line: `start check failed (<error type>: <message>), exiting` |
 | 1 | A required setting is missing or has the wrong type. `Settings()` raises `pydantic.ValidationError` | A traceback with one entry for each wrong setting |
 | 1 | Another error before the loop. For example: `LOG_LEVEL` is not a level name, or `HEALTH_PORT` is in use | A traceback |
-| 130 | Ctrl+C in a local run. Python raises `KeyboardInterrupt` | A traceback |
-| 137 | `docker stop` or a pod deletion. The app has no `SIGTERM` handler. In the container the app is process 1, and Linux does not deliver `SIGTERM` to process 1 without a handler. Docker sends `SIGKILL` after 10 seconds, Kubernetes after 30 seconds | None |
+| 137 | The current email does not finish within the stop grace period of 180 seconds. Docker or Kubernetes sends `SIGKILL`. The email stays unseen and gets a new attempt after the next start | The `SIGTERM received` line, no `stopped` line |
 
 A stop at any time is safe, because the state is in Gmail. The worst case is one duplicate post: the app posted the summary but did not move the email yet.
 

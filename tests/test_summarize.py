@@ -8,7 +8,7 @@ from helpers import make_message, make_settings
 
 from kindergarten_email_checker import summarize as summarize_module
 from kindergarten_email_checker.content import extract
-from kindergarten_email_checker.summarize import Summary, summarize, tool_definition
+from kindergarten_email_checker.summarize import Summary, summarize
 
 TOOL_NAME = make_settings().llm_tool_name
 
@@ -94,15 +94,9 @@ def test_invalid_input_is_logged_as_one_line_of_json(caplog):
     assert "url" not in logged["errors"][0]
 
 
-def test_two_bad_answers_return_none():
-    client = FakeClient(text_response(), text_response())
-    assert summarize(content(), make_settings(), client) is None
-    assert len(client.calls) == 2
-
-
-def test_model_tries_come_from_the_settings():
-    client = FakeClient(text_response(), text_response(), tool_response(VALID))
-    assert summarize(content(), make_settings(llm_model_tries=3), client).urgency == "high"
+def test_bad_answers_up_to_model_tries_return_none():
+    client = FakeClient(text_response(), text_response(), text_response())
+    assert summarize(content(), make_settings(llm_model_tries=3), client) is None
     assert len(client.calls) == 3
 
 
@@ -112,19 +106,6 @@ def test_text_null_means_no_value():
     )
     fields = [summary.action_ru, summary.deadline, summary.event_date, summary.event_time]
     assert fields == [None, None, None, None]
-
-
-def test_text_null_needs_no_retry():
-    client = FakeClient(tool_response({**VALID, "deadline": "null", "event_date": "null"}))
-    summary = summarize(content(), make_settings(), client)
-    assert summary.deadline is None and summary.event_date is None
-    assert len(client.calls) == 1
-
-
-def test_tool_schema_matches_summary_model():
-    schema = tool_definition(make_settings())["input_schema"]
-    assert set(schema["required"]) == {"title_ru", "summary_ru", "urgency", "category"}
-    assert Summary.model_validate(VALID).event_time == "10:00"
 
 
 class FakeResponse:

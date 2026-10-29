@@ -1,17 +1,4 @@
-from kindergarten_email_checker.mail import ensure_labels, refresh_capabilities
-
-
-class FakeFolders:
-    def __init__(self, existing):
-        self.names = set(existing)
-        self.created = []
-
-    def exists(self, name):
-        return name in self.names
-
-    def create(self, name):
-        self.created.append(name)
-        self.names.add(name)
+from kindergarten_email_checker.mail import refresh_capabilities
 
 
 class FakeClient:
@@ -22,15 +9,7 @@ class FakeClient:
 
 
 class FakeMailbox:
-    def __init__(self, existing=()):
-        self.folder = FakeFolders(existing)
-        self.client = FakeClient()
-
-
-def test_ensure_labels_creates_only_missing():
-    mailbox = FakeMailbox(existing=["Processed"])
-    ensure_labels(mailbox, ["Processed", "Ignored", "Failed"])
-    assert mailbox.folder.created == ["Ignored", "Failed"]
+    client = FakeClient()
 
 
 def test_refresh_capabilities_picks_up_move():

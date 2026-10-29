@@ -6,8 +6,6 @@ This guide describes daily tasks for the app on Docker Compose and on Kubernetes
 
 The app writes one log line for each processed email: UID, sender, subject, urgency, deadline, Telegram message id and duration. An invalid model answer gives one warning line with a JSON object: the problem, the input of the tool call and the validation errors. The app also posts failures to the group, so the owner sees them where the summaries are.
 
-The HTTP library `httpx2` writes one `INFO` line for each request to Telegram and DeepSeek. The line contains the URL. The URL of a Telegram request contains the bot token, so the log shows the token.
-
 A poll that finds no new email writes no log line at the `INFO` level. A poll that cannot connect to the mailbox writes one warning line. The next poll tries again. To see each poll, set `LOG_LEVEL=DEBUG`. Read "Change a setting".
 
 On the VPS:
@@ -70,7 +68,7 @@ On Kubernetes, deploy with the workflow **Deploy**:
 4. Keep the tag `latest`, or enter another image tag. The tags are in "CI pipeline".
 5. Click **Run workflow**.
 
-The workflow replaces the pod, and the new pod pulls the image again. The workflow waits until the new pod is ready. If the pod is not ready in 5 minutes, the workflow fails, for example with wrong credentials. The old pod keeps working. Read "Health checks". The one-time setup is in "Deploy from GitHub" in [SETUP.md](SETUP.md).
+The workflow replaces the pod, and the new pod pulls the image again. The old pod finishes the email it is working on, then exits. The workflow waits until the new pod is ready. If the pod is not ready in 5 minutes, the workflow fails, for example with wrong credentials. The old pod keeps working. Read "Health checks". The one-time setup is in "Deploy from GitHub" in [SETUP.md](SETUP.md).
 
 To go back to an older build, run **Deploy** with the tag `sha-<commit>` of that build.
 
@@ -95,7 +93,7 @@ The app reads the settings only when it starts.
 On the VPS:
 
 1. Edit `.env`.
-2. Create the container again with the new settings:
+2. Create the container again with the new settings. The old container finishes the current email first:
 
 ```bash
 docker compose up -d --force-recreate

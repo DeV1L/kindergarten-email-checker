@@ -17,6 +17,10 @@ healthPort: 8080
 readinessPeriodSeconds: 10
 livenessPeriodSeconds: 60
 
+# Time after SIGTERM before Kubernetes kills the container. The app finishes the current email
+# first: one model call of LLM_TIMEOUT_SECONDS with one retry, then the Telegram post.
+terminationGracePeriodSeconds: 180
+
 resources:
   requests:
     cpu: 50m

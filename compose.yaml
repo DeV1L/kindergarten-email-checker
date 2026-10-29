@@ -3,6 +3,8 @@ services:
     image: ghcr.io/dev1l/kindergarten-email-checker:${IMAGE_TAG:-latest}
     env_file: .env
     restart: unless-stopped
+    # Time after SIGTERM before Docker kills the container. The app finishes the current email first.
+    stop_grace_period: 180s
     read_only: true
     tmpfs:
       - /tmp

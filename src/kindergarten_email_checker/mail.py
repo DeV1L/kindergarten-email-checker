@@ -6,7 +6,7 @@ message to Processed, Ignored or Failed is the commit. Fetching does not set the
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from contextlib import suppress
 
 from imap_tools import AND, MailBox, MailMessage
@@ -51,9 +51,12 @@ def close(mailbox: MailBox) -> None:
         mailbox.logout()
 
 
-def fetch_unseen(mailbox: MailBox) -> list[MailMessage]:
-    """Return unseen messages in the current folder without setting the Seen flag."""
-    return list(mailbox.fetch(AND(seen=False), mark_seen=False, bulk=True))
+def fetch_unseen(mailbox: MailBox) -> Iterator[MailMessage]:
+    """Fetch the unseen messages in the current folder without setting the Seen flag.
+
+    One FETCH command per message, so one email with its attachments is in memory at a time.
+    """
+    return mailbox.fetch(AND(seen=False), mark_seen=False, bulk=False)
 
 
 def move(mailbox: MailBox, uids: Iterable[str], folder: str) -> None:

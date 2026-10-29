@@ -27,6 +27,7 @@ spec:
         rollme: {{ randAlphaNum 8 | quote }}
     spec:
       automountServiceAccountToken: false
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
