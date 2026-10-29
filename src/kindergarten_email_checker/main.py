@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import imaplib
 import logging
+import re
 import signal
 import sys
 import threading
@@ -33,6 +34,8 @@ log = logging.getLogger("kindergarten_email_checker")
 # The next poll tries again, so these get one warning line. Any other error gets a traceback.
 CONNECTION_ERRORS = (imaplib.IMAP4.abort, OSError)
 
+BOT_TOKEN = re.compile(r"/bot\d+:[\w-]+/")  # the bot token in a Telegram Bot API URL
+
 ready = False  # /readyz: set by check_services(), read by the HTTP server thread
 stop = threading.Event()  # set by request_stop(); the loop ends after the current email
 
@@ -40,11 +43,9 @@ stop = threading.Event()  # set by request_stop(); the loop ends after the curre
 def run() -> int:
     """Console entry point."""
     settings = Settings()  # fails with a readable message when a required variable is missing
-    logging.basicConfig(
-        level=settings.log_level.upper(),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        stream=sys.stdout,
-    )
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(MaskedFormatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logging.basicConfig(level=settings.log_level.upper(), handlers=[handler])
     log.info(
         "kindergarten-email-checker %s starting: mailbox=%s model=%s poll=%s min",
         __version__,
@@ -59,6 +60,16 @@ def run() -> int:
     loop(settings)
     log.info("stopped")
     return 0
+
+
+class MaskedFormatter(logging.Formatter):
+    """Replace the Telegram bot token in every log line, tracebacks included.
+
+    httpx2 logs the URL of each request at INFO, and Telegram URLs carry the token in the path.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        return BOT_TOKEN.sub("/bot<token>/", super().format(record))
 
 
 def request_stop(signum: int, frame: object) -> None:

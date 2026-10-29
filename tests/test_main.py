@@ -204,3 +204,19 @@ def test_stop_skips_the_remaining_emails_of_the_poll(calls, monkeypatch):
     finally:
         main.stop.clear()
     assert calls == {"moves": ["Processed"], "posts": ["summary"]}  # the first email finished
+
+
+def test_log_lines_mask_the_bot_token():
+    formatter = main.MaskedFormatter("%(levelname)s %(name)s: %(message)s")
+    record = logging.LogRecord(
+        "httpx2",
+        logging.INFO,
+        "",
+        0,
+        'HTTP Request: POST %s "HTTP/1.1 200 OK"',
+        ("https://api.telegram.org/bot123456789:AAEXAMPLE-token_1/sendMessage",),
+        None,
+    )
+    line = formatter.format(record)
+    assert "AAEXAMPLE" not in line
+    assert "POST https://api.telegram.org/bot<token>/sendMessage" in line

@@ -22,6 +22,7 @@ Source: [src/kindergarten_email_checker/main.py](../../src/kindergarten_email_ch
 | Module docstring | Summary of the loop |
 | `log` | Logger named `kindergarten_email_checker` |
 | `CONNECTION_ERRORS` | Constant |
+| `BOT_TOKEN` | Constant: the pattern of the bot token in a Bot API URL |
 | `ready` | Module variable: the result of the start check, for `/readyz` |
 | `stop` | Module variable: a `threading.Event`, set when a stop is requested |
 | `run()` | Function: process start |
@@ -30,11 +31,12 @@ Source: [src/kindergarten_email_checker/main.py](../../src/kindergarten_email_ch
 | `loop()` | Function: the endless loop |
 | `poll()` | Function: one poll |
 | `process()` | Function: one email |
+| `MaskedFormatter` | Class: log formatter that masks the bot token |
 | `health_status()` | Function: status code for a probe path |
 | `HealthHandler` | Class: HTTP request handler for the probes |
 | `start_health()` | Function: starts the HTTP server for the probes |
 
-The loop has one piece of state, the attempt counter. It is a plain `dict`, and `loop()` passes it to `poll()` and `process()` as an argument. A class would only hold this one dict. The only class is `HealthHandler`, because `http.server` requires one.
+The loop has one piece of state, the attempt counter. It is a plain `dict`, and `loop()` passes it to `poll()` and `process()` as an argument. A class would only hold this one dict. The two classes, `HealthHandler` and `MaskedFormatter`, exist because `http.server` and `logging` require a class.
 
 ### `log`
 
@@ -53,7 +55,11 @@ The console entry point. It runs once.
 7. Runs `loop()`. It returns after a stop request.
 8. Writes the line `stopped` and returns 0.
 
-At `INFO`, the HTTP library `httpx2` writes one line for each request, with the URL. The URL of a Telegram request contains the bot token, so the log shows the token.
+The stdout handler uses `MaskedFormatter`, so no log line shows the bot token.
+
+### `MaskedFormatter`
+
+A `logging.Formatter` with one change: after it formats a record, it replaces the Telegram bot token in the text. The pattern `BOT_TOKEN` matches the path segment `/bot<digits>:<token>/` of a Bot API URL and nothing else. The replacement is `/bot<token>/`. It runs on the final text, so it also covers a traceback that quotes the URL.
 
 ### `request_stop(signum, frame)`
 
@@ -158,10 +164,11 @@ The start check runs in `check_services()`, not in the server. The check must st
 | Name | Value | Meaning |
 |------|-------|---------|
 | `CONNECTION_ERRORS` | `(imaplib.IMAP4.abort, OSError)` | A failed or dropped connection. `OSError` includes socket, timeout and SSL errors. These get one warning line without a traceback |
+| `BOT_TOKEN` | `/bot\d+:[\w-]+/` | The bot token in a Bot API URL. `MaskedFormatter` replaces it with `/bot<token>/` |
 | `POLL_MINUTES` | Setting, default 10 | Pause after each poll |
 | `MAX_RETRIES_PER_MESSAGE` | Setting, default 3 | Failed attempts before the label `Failed` |
 | `HEALTH_PORT` | Setting, default 8080 | Port of the probe server. On Kubernetes, the chart value `healthPort` sets it |
-| `LOG_LEVEL` | Setting, default `INFO` | Level of all loggers. `DEBUG` shows each poll. At `INFO` and `DEBUG`, the log shows the URL of each Telegram request. This URL contains the bot token |
+| `LOG_LEVEL` | Setting, default `INFO` | Level of all loggers. `DEBUG` shows each poll. At `INFO` and `DEBUG`, the log shows the URL of each Telegram request, with the bot token masked |
 
 ## Errors and exit codes
 

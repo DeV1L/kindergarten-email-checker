@@ -171,7 +171,7 @@ Rules:
 - Attachments: one line with the file names, except skipped small images. The files themselves are not sent.
 - Footer: subject, sender and the date the email was sent, with the year and time, in the `TZ` timezone. For a manual forward, this is the date of the forward.
 - Fallback post when the model output is unusable: `⚠️ Без сводки`, the attachment names and the original text in an expandable quote. This is the only post that quotes the email, because it has no summary. Telegram's limit is 4096 characters, so the original is trimmed to fit and ends with `…`.
-- Log: one level, `LOG_LEVEL`, for the app and all libraries. The app and the Anthropic SDK send HTTP requests with the library `httpx2`. At `INFO`, `httpx2` logs the URL of each request. Telegram URLs contain the bot token, so the log shows the token. The app runs in a homelab, so this is accepted. Telegram error messages are built without the URL.
+- Log: one level, `LOG_LEVEL`, for the app and all libraries. The app and the Anthropic SDK send HTTP requests with the library `httpx2`. At `INFO`, `httpx2` logs the URL of each request. Telegram URLs contain the bot token, so the log formatter replaces it in every line, tracebacks included: the path reads `/bot<token>/`. Telegram error messages are built without the URL.
 - Error post: `⚠️ Не удалось обработать письмо «subject»: error`, at most once per email. The error text is trimmed at `TELEGRAM_MAX_ERROR_CHARS` characters, default 500.
 
 ## Failure handling

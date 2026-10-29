@@ -6,8 +6,6 @@ This guide describes daily tasks for the app on Docker Compose and on Kubernetes
 
 The app writes one log line for each processed email: UID, sender, subject, urgency, deadline, Telegram message id and duration. An invalid model answer gives one warning line with a JSON object: the problem, the input of the tool call and the validation errors. The app also posts failures to the group, so the owner sees them where the summaries are.
 
-The HTTP library `httpx2` writes one `INFO` line for each request to Telegram and DeepSeek. The line contains the URL. The URL of a Telegram request contains the bot token, so the log shows the token.
-
 A poll that finds no new email writes no log line at the `INFO` level. A poll that cannot connect to the mailbox writes one warning line. The next poll tries again. To see each poll, set `LOG_LEVEL=DEBUG`. Read "Change a setting".
 
 On the VPS:
