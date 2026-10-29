@@ -97,7 +97,4 @@ A wrong app password raises `imap_tools.errors.MailboxLoginError`.
 
 ## Tests
 
-`tests/test_mail.py` uses a fake `MailBox`. It covers:
-
-- `ensure_labels()` creates only the missing labels;
-- `refresh_capabilities()` picks up `MOVE` from the answer after login.
+`tests/test_mail.py` uses a fake `MailBox`. It covers one case: `refresh_capabilities()` picks up `MOVE` from the answer after login.

@@ -236,9 +236,7 @@ The instruction to call the tool is the only thing that makes the model call it.
 - a valid tool call returns a `Summary`;
 - invalid input is retried with a `tool_result` error block;
 - invalid input is logged as one line of JSON;
-- two bad answers return `None`;
-- the number of model calls comes from `LLM_MODEL_TRIES`;
-- the text "null" means no value and needs no retry;
-- the tool schema matches the `Summary` model;
+- bad answers up to `LLM_MODEL_TRIES` return `None`;
+- the text "null" means no value;
 - the balance check: an available account, `is_available` is `false`, a wrong key;
 - the system prompt names the tool.
