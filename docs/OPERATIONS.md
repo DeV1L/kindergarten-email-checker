@@ -70,7 +70,7 @@ On Kubernetes, deploy with the workflow **Deploy**:
 4. Keep the tag `latest`, or enter another image tag. The tags are in "CI pipeline".
 5. Click **Run workflow**.
 
-The workflow replaces the pod, and the new pod pulls the image again. The workflow waits until the new pod is ready. If the pod is not ready in 5 minutes, the workflow fails, for example with wrong credentials. The old pod keeps working. Read "Health checks". The one-time setup is in "Deploy from GitHub" in [SETUP.md](SETUP.md).
+The workflow replaces the pod, and the new pod pulls the image again. The old pod finishes the email it is working on, then exits. The workflow waits until the new pod is ready. If the pod is not ready in 5 minutes, the workflow fails, for example with wrong credentials. The old pod keeps working. Read "Health checks". The one-time setup is in "Deploy from GitHub" in [SETUP.md](SETUP.md).
 
 To go back to an older build, run **Deploy** with the tag `sha-<commit>` of that build.
 
@@ -95,7 +95,7 @@ The app reads the settings only when it starts.
 On the VPS:
 
 1. Edit `.env`.
-2. Create the container again with the new settings:
+2. Create the container again with the new settings. The old container finishes the current email first:
 
 ```bash
 docker compose up -d --force-recreate

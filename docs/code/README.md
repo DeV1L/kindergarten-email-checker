@@ -152,16 +152,15 @@ sequenceDiagram
 
 ## Exit codes
 
-The process never stops on its own after the start check. These are all the ways it ends:
+After the start check, the process stops only on a signal. These are all the ways it ends:
 
 | Exit code | Cause | Log output |
 |-----------|-------|------------|
-| 0 | `run()` returns 0. This does not happen in practice, because `loop()` does not return | None |
+| 0 | `SIGTERM` or `SIGINT`: `docker stop`, a pod deletion, Ctrl+C in a local run. `request_stop()` sets `stop`, `loop()` returns after the current email, `run()` returns 0 | One line: `SIGTERM received, stopping after the current email`, then `stopped` |
 | 1 | The start check fails: Telegram, Gmail or DeepSeek. `check_services()` raises `SystemExit(1)` | One line: `start check failed (<error type>: <message>), exiting` |
 | 1 | A required setting is missing or has the wrong type. `Settings()` raises `pydantic.ValidationError` | A traceback with one entry for each wrong setting |
 | 1 | Another error before the loop. For example: `LOG_LEVEL` is not a level name, or `HEALTH_PORT` is in use | A traceback |
-| 130 | Ctrl+C in a local run. Python raises `KeyboardInterrupt` | A traceback |
-| 137 | `docker stop` or a pod deletion. The app has no `SIGTERM` handler. In the container the app is process 1, and Linux does not deliver `SIGTERM` to process 1 without a handler. Docker sends `SIGKILL` after 10 seconds, Kubernetes after 30 seconds | None |
+| 137 | The current email does not finish within the stop grace period of 180 seconds. Docker or Kubernetes sends `SIGKILL`. The email stays unseen and gets a new attempt after the next start | The `SIGTERM received` line, no `stopped` line |
 
 A stop at any time is safe, because the state is in Gmail. The worst case is one duplicate post: the app posted the summary but did not move the email yet.
 

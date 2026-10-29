@@ -1,5 +1,6 @@
 import imaplib
 import logging
+import signal
 import urllib.error
 import urllib.request
 
@@ -172,3 +173,34 @@ def test_readyz_only_after_the_start_check(monkeypatch):
         assert get(server, "/readyz") == 200
     finally:
         server.shutdown()
+
+
+def test_stop_ends_the_loop_after_the_current_poll(monkeypatch):
+    polls = []
+
+    def poll(settings, attempts):
+        polls.append(1)
+        main.request_stop(signal.SIGTERM, None)  # as if SIGTERM arrived during the poll
+
+    monkeypatch.setattr(main, "poll", poll)
+    main.stop.clear()
+    try:
+        main.loop(make_settings())  # returns instead of sleeping POLL_MINUTES
+    finally:
+        main.stop.clear()
+    assert polls == [1]
+
+
+def test_stop_skips_the_remaining_emails_of_the_poll(calls, monkeypatch):
+    def summarize(content, settings):
+        main.stop.set()
+        return FakeSummary()
+
+    monkeypatch.setattr(main.mail, "connect", lambda settings: ClosingMailbox())
+    monkeypatch.setattr(main.mail, "fetch_unseen", lambda mb: [make_message(), make_message()])
+    monkeypatch.setattr(main, "summarize", summarize)
+    try:
+        main.poll(make_settings(), {})
+    finally:
+        main.stop.clear()
+    assert calls == {"moves": ["Processed"], "posts": ["summary"]}  # the first email finished

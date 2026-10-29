@@ -23,7 +23,9 @@ Source: [src/kindergarten_email_checker/main.py](../../src/kindergarten_email_ch
 | `log` | Logger named `kindergarten_email_checker` |
 | `CONNECTION_ERRORS` | Constant |
 | `ready` | Module variable: the result of the start check, for `/readyz` |
+| `stop` | Module variable: a `threading.Event`, set when a stop is requested |
 | `run()` | Function: process start |
+| `request_stop()` | Function: the signal handler for `SIGTERM` and `SIGINT` |
 | `check_services()` | Function: start check |
 | `loop()` | Function: the endless loop |
 | `poll()` | Function: one poll |
@@ -45,12 +47,17 @@ The console entry point. It runs once.
 1. Creates `Settings()`. A missing required variable stops the process here with a `ValidationError`.
 2. Sets up logging to stdout with the level from `LOG_LEVEL`. The format is `time level logger: message`. All loggers use this level: the app and all libraries.
 3. Writes one start line: version, dedicated mailbox, model, poll interval. The line contains no secret.
-4. Starts the HTTP server for the probes with `start_health()`.
-5. Runs `check_services()`.
-6. Runs `loop()`. This call does not return.
-7. Returns 0. The code never gets here in practice.
+4. Installs `request_stop()` as the handler for `SIGTERM` and `SIGINT`.
+5. Starts the HTTP server for the probes with `start_health()`.
+6. Runs `check_services()`.
+7. Runs `loop()`. It returns after a stop request.
+8. Writes the line `stopped` and returns 0.
 
 At `INFO`, the HTTP library `httpx2` writes one line for each request, with the URL. The URL of a Telegram request contains the bot token, so the log shows the token.
+
+### `request_stop(signum, frame)`
+
+The signal handler. It writes one line with the signal name and sets `stop`. It does not stop anything itself. Python runs a signal handler in the main thread between two statements. A blocking IMAP or HTTP call finishes first, then the handler runs. So the current email always completes: the model call, the post and the move. The container runs the app as process 1, and Linux delivers `SIGTERM` to process 1 only when a handler is installed. Without this handler, `docker stop` and a pod deletion would wait for the grace period and then kill the process at any point, also between the post and the move.
 
 ### `check_services(settings)`
 
@@ -70,7 +77,7 @@ The check runs only once. The app does not poll before the check passes: with wr
 
 ### `loop(settings)`
 
-Creates the attempt counter `attempts: dict[str, int]`, then repeats forever: `poll()`, then `time.sleep(POLL_MINUTES * 60)`. The first poll runs at once after the start check. The pause counts from the end of a poll, so the real interval is `POLL_MINUTES` plus the duration of the poll.
+Creates the attempt counter `attempts: dict[str, int]`, then repeats until `stop` is set: `poll()`, then `stop.wait(POLL_MINUTES * 60)`. The wait is the pause between polls. It returns at once when `request_stop()` sets `stop`, so a stop during the pause does not wait for the pause to end. The first poll runs at once after the start check. The pause counts from the end of a poll, so the real interval is `POLL_MINUTES` plus the duration of the poll.
 
 The counter maps an email UID to the number of failed attempts. It lets the app stop retrying an email that always fails. A failed email stays unseen in the inbox label, so without the counter each poll would try it again forever. The counter lives in memory, because the labels are the only state. A restart clears it, so an email can get up to `MAX_RETRIES_PER_MESSAGE` new attempts after each restart.
 
@@ -80,7 +87,7 @@ One poll:
 
 1. Connects with `mail.connect()`.
 2. Writes a `DEBUG` line. At `INFO`, a poll without new email writes nothing.
-3. Fetches the unseen emails with `mail.fetch_unseen()`, one at a time, and calls `process()` for each.
+3. Fetches the unseen emails with `mail.fetch_unseen()`, one at a time, and calls `process()` for each. Before each email, it checks `stop`. After a stop request, the remaining emails stay unseen and wait for the next start.
 4. In `finally`: logs out with `mail.close()`, when the connection exists.
 
 Error handling:
@@ -166,6 +173,7 @@ The start check runs in `check_services()`, not in the server. The check must st
 | Error in extraction, model or Telegram | Counter +1, retry in the next poll, `Failed` after the limit |
 | `HEALTH_PORT` is in use | `OSError` in `start_health()`. Exit code 1 before the start check |
 | The process is frozen | `/livez` gets no answer. Kubernetes restarts the container |
+| `SIGTERM` or `SIGINT` | The current email finishes, the loop ends, exit code 0 |
 
 The full list of exit codes is in [README.md](README.md#exit-codes).
 
@@ -180,4 +188,5 @@ The full list of exit codes is in [README.md](README.md#exit-codes).
 - a poll processes the unseen emails and logs out;
 - a dropped connection gives one warning line, another IMAP error gives a traceback;
 - the start check sets `ready`, a failed start check exits with one error line;
-- `/readyz` gives 503 before the start check and 200 after, `/livez` gives 200, another path gives 404.
+- `/readyz` gives 503 before the start check and 200 after, `/livez` gives 200, another path gives 404;
+- a stop request ends the loop after the current poll, and a poll skips the remaining emails after a stop request.

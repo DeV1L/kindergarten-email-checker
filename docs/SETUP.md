@@ -186,6 +186,7 @@ The VPS needs only `compose.yaml` and `.env`. It pulls the image and does not bu
 |---------|-------|
 | Image | `ghcr.io/dev1l/kindergarten-email-checker`, with the tag from `IMAGE_TAG` |
 | Restart | `unless-stopped`: Docker starts the container again after a crash or a reboot |
+| Stop grace period | 180 seconds. On `docker stop`, the app finishes the current email and exits. Docker kills the container only after this time |
 | Root filesystem | Read-only, with a tmpfs at `/tmp` |
 | Memory limit | 256 MB |
 | Logs | json-file, rotated at 3 files of 10 MB |
@@ -234,6 +235,7 @@ The Helm chart is in [charts/kindergarten-email-checker](../charts/kindergarten-
 | Pull policy | `Always`. Each `helm upgrade` replaces the pod, so the new pod pulls the image again |
 | User | 10001, non-root |
 | Security | Read-only root filesystem, no capabilities, no privilege escalation, no service account token |
+| Stop grace period | `terminationGracePeriodSeconds`, default 180. On a pod deletion, the app finishes the current email and exits. Kubernetes kills the container only after this time |
 | Health checks | A readiness probe on `/readyz` and a liveness probe on `/livez`, port 8080. The chart values `readinessPeriodSeconds` (default 10) and `livenessPeriodSeconds` (default 60) set how often they run. Read "Health checks" in the [operations guide](OPERATIONS.md) |
 | Resources | Memory request and limit 128 MiB, CPU request 50m |
 | Settings | All variables come from an existing secret, `existingSecret` in the chart values, default `kindergarten-email-checker`. The chart does not create or hold secrets. `env` in the chart values overrides single variables |
